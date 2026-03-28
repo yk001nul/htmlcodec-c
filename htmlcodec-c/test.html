@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Online Resume - John Doe</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+
+        header {
+            background: #2c3e50;
+            color: #fff;
+            padding: 20px;
+            text-align: center;
+        }
+
+            header h1 {
+                margin: 0;
+            }
+
+        nav {
+            background: #34495e;
+            padding: 10px;
+            text-align: center;
+        }
+
+            nav a {
+                color: #fff;
+                margin: 0 15px;
+                text-decoration: none;
+                font-weight: bold;
+            }
+
+        section {
+            padding: 20px;
+            max-width: 900px;
+            margin: auto;
+        }
+
+        h2 {
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 5px;
+            color: #2c3e50;
+        }
+
+        .job, .education {
+            margin-bottom: 15px;
+        }
+
+        footer {
+            background: #2c3e50;
+            color: #fff;
+            text-align: center;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        button {
+            background: #2980b9;
+            color: #fff;
+            border: none;
+            padding: 8px 12px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+            button:hover {
+                background: #3498db;
+            }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>John Doe</h1>
+        <p>Software Engineer | Web Developer | Problem Solver</p>
+    </header>
+
+    <nav>
+        <a href="#about">About</a>
+        <a href="#experience">Experience</a>
+        <a href="#education">Education</a>
+        <a href="#skills">Skills</a>
+        <a href="#contact">Contact</a>
+    </nav>
+
+    <section id="about">
+        <h2>About Me</h2>
+        <p>Passionate software engineer with 5+ years of experience building scalable web applications and delivering innovative solutions.</p>
+    </section>
+
+    <section id="experience">
+        <h2>Work Experience</h2>
+        <div class="job">
+            <h3>Senior Developer - TechCorp</h3>
+            <p><em>2020 - Present</em></p>
+            <p>Leading a team of developers to create enterprise-level applications with modern frameworks.</p>
+            <button onclick="toggleDetails('exp1')">Show More</button>
+            <div id="exp1" class="hidden">
+                <ul>
+                    <li>Designed and implemented RESTful APIs</li>
+                    <li>Optimized database queries improving performance by 30%</li>
+                    <li>Mentored junior developers</li>
+                </ul>
+            </div>
+        </div>
+        <div class="job">
+            <h3>Web Developer - CodeWorks</h3>
+            <p><em>2017 - 2020</em></p>
+            <p>Developed responsive websites and collaborated with designers to enhance user experience.</p>
+        </div>
+    </section>
+
+    <section id="education">
+        <h2>Education</h2>
+        <div class="education">
+            <h3>B.Sc. in Computer Science</h3>
+            <p>University of Technology, 2013 - 2017</p>
+        </div>
+    </section>
+
+    <section id="skills">
+        <h2>Skills</h2>
+        <ul>
+            <li>HTML, CSS, JavaScript</li>
+            <li>React, Angular</li>
+            <li>Node.js, Express</li>
+            <li>SQL, MongoDB</li>
+            <li>Git, Agile methodologies</li>
+        </ul>
+    </section>
+
+    <section id="contact">
+        <h2>Contact</h2>
+        <p>Email: johndoe@example.com</p>
+        <p>LinkedIn: linkedin.com/in/johndoe</p>
+        <p>GitHub: github.com/johndoe</p>
+    </section>
+
+    <footer>
+        <p>&copy; 2026 John Doe. All rights reserved.</p>
+    </footer>
+
+    <script>
+    function toggleDetails(id) {
+      const element = document.getElementById(id);
+      if (element.classList.contains('hidden')) {
+        element.classList.remove('hidden');
+      } else {
+        element.classList.add('hidden');
+      }
+    }
+    </script>
+
+</body>
+</html>

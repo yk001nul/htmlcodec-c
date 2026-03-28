@@ -1,0 +1,57 @@
+﻿#include <stdio.h>
+#ifndef TOKENIZER_TEST_H
+#define TOKENIZER_TEST_H
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+#include "tokenizer.h"
+
+extern int testsPassed;
+extern int testsFailed;
+
+void assert_equal_int(int actual, int expected, const char* message);
+
+void assert_equal_str(const char* actual, const char* expected, const char* message);
+
+void assert_true(int condition, const char* message);
+
+// Plain text tests
+void test_plain_text_simple();
+void test_plain_text_empty();
+void test_plain_text_special_chars();
+
+// Opening tag tests
+void test_opening_tag_simple();
+void test_opening_tag_with_attributes();
+
+// Self-closing tag tests
+void test_self_closing_tag_simple();
+void test_self_closing_tag_with_attributes();
+
+// Closing tag tests
+void test_closing_tag();
+
+// Comment tests
+void test_comment_simple();
+
+// Mixed content tests
+void test_mixed_text_and_tags();
+
+// Case conversion test
+void test_uppercase_tags();
+
+// Whitespace test
+void test_whitespace_preservation();
+
+// Large content test
+void test_large_content();
+
+// Nested tags test
+void test_nested_tags();
+
+// Worst case - unclosed tag
+void test_unclosed_tag();
+
+#endif // TOKENIZER_TEST_H
