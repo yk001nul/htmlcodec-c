@@ -1,0 +1,46 @@
+#ifndef HTML_TOKENIZER_H
+#define HTML_TOKENIZER_H
+
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+#define HTML_MAX_TOKENS 1000
+#define HTML_MAX_TAG_NAME 64
+#define HTML_MAX_ATTR_COUNT 32
+#define HTML_MAX_ATTR_NAME 32
+#define HTML_MAX_ATTR_VALUE 256
+#define HTML_MAX_TEXT_CONTENT 512
+
+typedef struct {
+    char name[HTML_MAX_ATTR_NAME];
+    char value[HTML_MAX_ATTR_VALUE];
+} HTMLAttribute;
+
+typedef struct {
+    int type; // 0: text, 1: openTag, 2: closeTag
+    union {
+        struct {
+            char content[HTML_MAX_TEXT_CONTENT];
+        } text;
+        struct {
+            char name[HTML_MAX_TAG_NAME];
+            HTMLAttribute attributes[HTML_MAX_ATTR_COUNT];
+            int attrCount;
+            int selfClosing;
+        } tag;
+    } data;
+} HTMLToken;
+
+typedef struct {
+    HTMLToken tokens[HTML_MAX_TOKENS];
+    int count;
+} HTMLTokenArray;
+
+void parseHTMLAttributes(const char* attrString, HTMLAttribute* attrs, int* attrCount);
+
+HTMLTokenArray* parseHTML(const char* html);
+
+void freeHTMLTokenArray(HTMLTokenArray* arr);
+
+#endif // HTML_TOKENIZER_H

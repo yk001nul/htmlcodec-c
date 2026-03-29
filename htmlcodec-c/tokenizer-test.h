@@ -6,7 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include "tokenizer.h"
+#include "html-tokenizer.h"
+#include "css-tokenizer.h"
 
 extern int testsPassed;
 extern int testsFailed;
@@ -53,5 +54,17 @@ void test_nested_tags();
 
 // Worst case - unclosed tag
 void test_unclosed_tag();
+
+// CSS Tokenizer Tests - Best case scenarios
+void test_css_simple_rule();
+void test_css_multiple_selectors();
+void test_css_multiple_properties();
+
+// CSS Tokenizer Tests - Worse case scenarios
+void test_css_comment_handling();
+void test_css_at_rules();
+void test_css_complex_selectors();
+void test_css_empty_rules();
+void test_css_malformed_input();
 
 #endif // TOKENIZER_TEST_H

@@ -8,9 +8,10 @@
 
 int main()
 {
-    printf("Running C HTML Parser Tests\n");
-    printf("=============================\n\n");
+    printf("Running C HTML and CSS Parser Tests\n");
+    printf("====================================\n\n");
 
+    printf("--- HTML TOKENIZER TESTS ---\n");
     test_plain_text_simple();
     test_plain_text_empty();
     test_plain_text_special_chars();
@@ -27,7 +28,17 @@ int main()
     test_nested_tags();
     test_unclosed_tag();
 
-    printf("\n=============================\n");
+    printf("\n--- CSS TOKENIZER TESTS ---\n");
+    test_css_simple_rule();
+    test_css_multiple_selectors();
+    test_css_multiple_properties();
+    test_css_comment_handling();
+    test_css_at_rules();
+    test_css_complex_selectors();
+    test_css_empty_rules();
+    test_css_malformed_input();
+
+    printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
 
     return testsFailed == 0 ? 0 : 1;

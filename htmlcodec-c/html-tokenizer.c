@@ -1,14 +1,13 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include "tokenizer.h"
+#include "html-tokenizer.h"
 
-void parseAttributes(const char* attrString, Attribute* attrs, int* attrCount) {
+void parseHTMLAttributes(const char* attrString, HTMLAttribute* attrs, int* attrCount) {
     *attrCount = 0;
-     int i = 0, len = strlen(attrString);
+    int i = 0, len = strlen(attrString);
 
-    while (i < len && *attrCount < MAX_ATTR_COUNT) {
+    while (i < len && *attrCount < HTML_MAX_ATTR_COUNT) {
         // Skip whitespace
         while (i < len && isspace(attrString[i])) i++;
         if (i >= len) break;
@@ -20,8 +19,8 @@ void parseAttributes(const char* attrString, Attribute* attrs, int* attrCount) {
         if (nameLen == 0) break;
 
         strncpy(attrs[*attrCount].name, &attrString[nameStart],
-            nameLen < MAX_ATTR_NAME ? nameLen : MAX_ATTR_NAME - 1);
-        attrs[*attrCount].name[nameLen < MAX_ATTR_NAME ? nameLen : MAX_ATTR_NAME - 1] = '\0';
+            nameLen < HTML_MAX_ATTR_NAME ? nameLen : HTML_MAX_ATTR_NAME - 1);
+        attrs[*attrCount].name[nameLen < HTML_MAX_ATTR_NAME ? nameLen : HTML_MAX_ATTR_NAME - 1] = '\0';
 
         // Skip '='
         while (i < len && isspace(attrString[i])) i++;
@@ -40,32 +39,32 @@ void parseAttributes(const char* attrString, Attribute* attrs, int* attrCount) {
         int valueLen = i - valueStart;
 
         strncpy(attrs[*attrCount].value, &attrString[valueStart],
-            valueLen < MAX_ATTR_VALUE ? valueLen : MAX_ATTR_VALUE - 1);
-        attrs[*attrCount].value[valueLen < MAX_ATTR_VALUE ? valueLen : MAX_ATTR_VALUE - 1] = '\0';
+            valueLen < HTML_MAX_ATTR_VALUE ? valueLen : HTML_MAX_ATTR_VALUE - 1);
+        attrs[*attrCount].value[valueLen < HTML_MAX_ATTR_VALUE ? valueLen : HTML_MAX_ATTR_VALUE - 1] = '\0';
 
         (*attrCount)++;
         i++; // skip closing quote
     }
 }
 
-TokenArray* parseHTML(const char* html) {
-    TokenArray* result = (TokenArray*)malloc(sizeof(TokenArray));
+HTMLTokenArray* parseHTML(const char* html) {
+    HTMLTokenArray* result = (HTMLTokenArray*)malloc(sizeof(HTMLTokenArray));
     result->count = 0;
 
     int i = 0, len = strlen(html);
 
-    while (i < len && result->count < MAX_TOKENS) {
+    while (i < len && result->count < HTML_MAX_TOKENS) {
         // Text content
         if (html[i] != '<') {
             int textStart = i;
             while (i < len && html[i] != '<') i++;
             int textLen = i - textStart;
 
-            Token* token = &result->tokens[result->count++];
+            HTMLToken* token = &result->tokens[result->count++];
             token->type = 0; // text
             strncpy(token->data.text.content, &html[textStart],
-                textLen < MAX_TEXT_CONTENT ? textLen : MAX_TEXT_CONTENT - 1);
-            token->data.text.content[textLen < MAX_TEXT_CONTENT ? textLen : MAX_TEXT_CONTENT - 1] = '\0';
+                textLen < HTML_MAX_TEXT_CONTENT ? textLen : HTML_MAX_TEXT_CONTENT - 1);
+            token->data.text.content[textLen < HTML_MAX_TEXT_CONTENT ? textLen : HTML_MAX_TEXT_CONTENT - 1] = '\0';
         }
         // Tag content
         else if (html[i] == '<') {
@@ -97,14 +96,14 @@ TokenArray* parseHTML(const char* html) {
             while (nameEnd < strlen(tag) && !isspace(tag[nameEnd]) && tag[nameEnd] != '/') nameEnd++;
             int nameLen = nameEnd - nameStart;
 
-            char tagName[MAX_TAG_NAME];
-            strncpy(tagName, &tag[nameStart], nameLen < MAX_TAG_NAME ? nameLen : MAX_TAG_NAME - 1);
-            tagName[nameLen < MAX_TAG_NAME ? nameLen : MAX_TAG_NAME - 1] = '\0';
+            char tagName[HTML_MAX_TAG_NAME];
+            strncpy(tagName, &tag[nameStart], nameLen < HTML_MAX_TAG_NAME ? nameLen : HTML_MAX_TAG_NAME - 1);
+            tagName[nameLen < HTML_MAX_TAG_NAME ? nameLen : HTML_MAX_TAG_NAME - 1] = '\0';
 
             // Convert to lowercase
             for (int j = 0; tagName[j]; j++) tagName[j] = tolower(tagName[j]);
 
-            Token* token = &result->tokens[result->count++];
+            HTMLToken* token = &result->tokens[result->count++];
             token->type = isClosing ? 2 : 1;
             strcpy(token->data.tag.name, tagName);
             token->data.tag.selfClosing = isSelfClosing;
@@ -114,13 +113,13 @@ TokenArray* parseHTML(const char* html) {
             int attrLen = strlen(tag) - nameEnd - (isSelfClosing ? 1 : 0);
             strncpy(attrString, &tag[nameEnd], attrLen < 512 ? attrLen : 511);
             attrString[attrLen < 512 ? attrLen : 511] = '\0';
-            parseAttributes(attrString, token->data.tag.attributes, &token->data.tag.attrCount);
+            parseHTMLAttributes(attrString, token->data.tag.attributes, &token->data.tag.attrCount);
         }
     }
 
     return result;
 }
 
-void freeTokenArray(TokenArray* arr) {
+void freeHTMLTokenArray(HTMLTokenArray* arr) {
     free(arr);
 }
