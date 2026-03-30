@@ -1,5 +1,5 @@
 #include "tokenizer-test.h"
-#include "tokenizer-test.h"
+#include "nl-en-tokenizer.h"
 
 int testsPassed = 0;
 int testsFailed = 0;
@@ -175,6 +175,26 @@ void test_unclosed_tag() {
     assert_true(result->count > 0, "Unclosed: should parse something");
     freeHTMLTokenArray(result);
     printf("? Worst case - unclosed tag\n");
+}
+
+// English tokenizer tests - best case
+void test_nl_en_tokenizer_best_case() {
+    const char* text = "Information and community in development";
+    NLTokenArray* result = tokenizeEnglish(text);
+    assert_true(result != NULL, "English tokenizer result must not be NULL");
+    printf("? NL-EN best case: input length %zu -> token count %zu\n", strlen(text), result->count);
+    assert_true(result->count > 0, "English tokenizer best case: at least one token");
+    freeNLTokenArray(result);
+}
+
+// English tokenizer tests - worst case
+void test_nl_en_tokenizer_worst_case() {
+    const char* text = "!!!!????~~~~";
+    NLTokenArray* result = tokenizeEnglish(text);
+    assert_true(result != NULL, "English tokenizer result must not be NULL");
+    printf("? NL-EN worst case: input length %zu -> token count %zu\n", strlen(text), result->count);
+    assert_equal_int(result->count, (int)strlen(text), "English tokenizer worst case should produce one token per char (single-size fallback)");
+    freeNLTokenArray(result);
 }
 
 // CSS Tokenizer Tests - Best case scenarios

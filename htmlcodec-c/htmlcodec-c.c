@@ -28,6 +28,10 @@ int main()
     test_nested_tags();
     test_unclosed_tag();
 
+    printf("\n--- English TOKENIZER TESTS ---\n");
+    test_nl_en_tokenizer_best_case();
+    test_nl_en_tokenizer_worst_case();
+
     printf("\n--- CSS TOKENIZER TESTS ---\n");
     test_css_simple_rule();
     test_css_multiple_selectors();

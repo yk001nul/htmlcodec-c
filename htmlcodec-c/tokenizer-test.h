@@ -60,6 +60,10 @@ void test_css_simple_rule();
 void test_css_multiple_selectors();
 void test_css_multiple_properties();
 
+// English tokenizer tests
+void test_nl_en_tokenizer_best_case();
+void test_nl_en_tokenizer_worst_case();
+
 // CSS Tokenizer Tests - Worse case scenarios
 void test_css_comment_handling();
 void test_css_at_rules();
