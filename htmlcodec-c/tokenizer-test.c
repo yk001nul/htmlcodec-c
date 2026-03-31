@@ -322,6 +322,61 @@ void test_css_malformed_input() {
     printf("? CSS - malformed input (worst case)\n");
 }
 
+void test_html_integrated_tokenizer_token_content() {
+    HTMLTokenArray* result = parseHTML("<style>body { color: red; }</style><script>var a = 1;</script><div>Plain text</div>");
+    assert_equal_int(result->count, 9, "Integrated token content: count");
+
+    assert_equal_int(result->tokens[1].subdataType, HTML_SUBDATA_CSS, "Style text should be CSS subdata");
+    assert_true(result->tokens[1].subdata.css != NULL, "Style subdata should be present");
+
+    assert_equal_int(result->tokens[4].subdataType, HTML_SUBDATA_JS, "Script text should be JS subdata");
+    assert_true(result->tokens[4].subdata.js != NULL, "Script subdata should be present");
+
+    assert_equal_int(result->tokens[7].subdataType, HTML_SUBDATA_NL, "Plain text before closing div should be NL subdata");
+    assert_true(result->tokens[7].subdata.nl != NULL, "NL subdata should be present");
+
+    freeHTMLTokenArray(result);
+    printf("? HTML integrated tokenizer - token based content\n");
+}
+
+void test_html_integrated_tokenizer_attr_content() {
+    HTMLTokenArray* result = parseHTML("<div style=\"color:blue;\" onclick=\"alert('x')\">x</div>");
+    assert_equal_int(result->count, 3, "Integrated attr content: count");
+
+    HTMLAttribute* styleAttr = &result->tokens[0].data.tag.attributes[0];
+    assert_equal_int(styleAttr->subdataType, HTML_SUBDATA_CSS, "Style attribute should be CSS subdata");
+    assert_true(styleAttr->subdata.css != NULL, "Style attribute subdata should be present");
+
+    HTMLAttribute* onAttr = &result->tokens[0].data.tag.attributes[1];
+    assert_equal_int(onAttr->subdataType, HTML_SUBDATA_JS, "on* attribute should be JS subdata");
+    assert_true(onAttr->subdata.js != NULL, "on* attribute subdata should be present");
+
+    freeHTMLTokenArray(result);
+    printf("? HTML integrated tokenizer - attribute based content\n");
+}
+
+void test_html_integrated_tokenizer_both_content() {
+    HTMLTokenArray* result = parseHTML("<script>function test() { return 5; }</script><div style=\"background: white;\" onmouseover=\"console.log('h');\">Hello</div>");
+    assert_equal_int(result->count, 6, "Integrated both content: count");
+
+    assert_equal_int(result->tokens[1].subdataType, HTML_SUBDATA_JS, "Script text should be JS subdata in both test");
+    assert_true(result->tokens[1].subdata.js != NULL, "Script text subdata should be present in both test");
+
+    HTMLAttribute* styleAttr = &result->tokens[3].data.tag.attributes[0];
+    assert_equal_int(styleAttr->subdataType, HTML_SUBDATA_CSS, "Style attribute should be CSS subdata in both test");
+    assert_true(styleAttr->subdata.css != NULL, "Style attribute subdata should be present in both test");
+
+    HTMLAttribute* onAttr = &result->tokens[3].data.tag.attributes[1];
+    assert_equal_int(onAttr->subdataType, HTML_SUBDATA_JS, "on* attribute should be JS subdata in both test");
+    assert_true(onAttr->subdata.js != NULL, "on* attribute subdata should be present in both test");
+
+    assert_equal_int(result->tokens[4].subdataType, HTML_SUBDATA_NL, "Text token should be NL subdata in both test");
+    assert_true(result->tokens[4].subdata.nl != NULL, "Text token NL subdata should be present in both test");
+
+    freeHTMLTokenArray(result);
+    printf("? HTML integrated tokenizer - both token and attribute content\n");
+}
+
 
 
 
