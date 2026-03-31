@@ -72,6 +72,7 @@ void test_cl_js_tokenizer_worst_case();
 void test_html_integrated_tokenizer_token_content();
 void test_html_integrated_tokenizer_attr_content();
 void test_html_integrated_tokenizer_both_content();
+void test_html_integrated_tokenizer_real_file();
 
 // CSS Tokenizer Tests - Worse case scenarios
 void test_css_comment_handling();

@@ -35,6 +35,34 @@ void assert_true(int condition, const char* message) {
     }
 }
 
+static char* loadFileContent(const char* path) {
+    FILE* fp = fopen(path, "rb");
+    if (!fp) return NULL;
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+    long size = ftell(fp);
+    if (size < 0) {
+        fclose(fp);
+        return NULL;
+    }
+    rewind(fp);
+    char* buffer = (char*)malloc((size_t)size + 1);
+    if (!buffer) {
+        fclose(fp);
+        return NULL;
+    }
+    size_t readBytes = fread(buffer, 1, (size_t)size, fp);
+    fclose(fp);
+    if (readBytes != (size_t)size) {
+        free(buffer);
+        return NULL;
+    }
+    buffer[size] = '\0';
+    return buffer;
+}
+
 // HTML Tokenizer Tests - Plain text tests
 void test_plain_text_simple() {
     HTMLTokenArray* result = parseHTML("Hello World");
@@ -377,15 +405,46 @@ void test_html_integrated_tokenizer_both_content() {
     printf("? HTML integrated tokenizer - both token and attribute content\n");
 }
 
+void test_html_integrated_tokenizer_real_file() {
+    char* html = loadFileContent("test.html");
+    if (!html) {
+        html = loadFileContent("../../../test.html");
+    }
+    assert_true(html != NULL, "Real HTML file should be loadable");
 
+    HTMLTokenArray* result = parseHTML(html);
+    assert_true(result != NULL, "Real HTML parse result should not be NULL");
+    assert_true(result->count > 20, "Real HTML parse should produce many tokens");
 
+    int hasStyle = 0;
+    int hasScript = 0;
+    int hasNL = 0;
+    int hasOnAttr = 0;
 
+    for (int i = 0; i < result->count; i++) {
+        HTMLToken* token = &result->tokens[i];
+        if (token->type == 0 && token->subdataType == HTML_SUBDATA_CSS) hasStyle = 1;
+        if (token->type == 0 && token->subdataType == HTML_SUBDATA_JS) hasScript = 1;
+        if (token->type == 0 && token->subdataType == HTML_SUBDATA_NL) hasNL = 1;
+        if (token->type != 0) {
+            for (int a = 0; a < token->data.tag.attrCount; a++) {
+                if (token->data.tag.attributes[a].subdataType == HTML_SUBDATA_JS &&
+                    strcmp(token->data.tag.attributes[a].name, "onclick") == 0) {
+                    hasOnAttr = 1;
+                }
+            }
+        }
+    }
 
+    assert_true(hasStyle, "Real HTML should contain CSS subdata token");
+    assert_true(hasScript, "Real HTML should contain JS subdata token");
+    assert_true(hasNL, "Real HTML should contain NL subdata token");
+    assert_true(hasOnAttr, "Real HTML should include onclick JS attribute subdata");
 
-
-
-
-
+    freeHTMLTokenArray(result);
+    free(html);
+    printf("? HTML integrated tokenizer - real test file content\n");
+}
 
 
 

@@ -49,8 +49,7 @@ int main()
     printf("\n--- HTML INTEGRATED TOKENIZER TESTS ---\n");
     test_html_integrated_tokenizer_token_content();
     test_html_integrated_tokenizer_attr_content();
-    test_html_integrated_tokenizer_both_content();
-
+    test_html_integrated_tokenizer_both_content();    test_html_integrated_tokenizer_real_file();
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
 
