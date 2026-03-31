@@ -143,7 +143,7 @@ NLTokenArray* tokenizeEnglish(const char* input) {
             result->tokens[result->count++] = token;
             pos += matchedLen;
         } else {
-            size_t toConsume = minPatternLen;
+            size_t toConsume = 1;
             if (toConsume > remaining) toConsume = remaining;
             for (size_t j = 0; j < toConsume && result->count < NL_EN_MAX_TOKENS; j++) {
                 unsigned char ch = (unsigned char)input[pos + j];

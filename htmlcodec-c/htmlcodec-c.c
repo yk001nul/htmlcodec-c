@@ -32,6 +32,10 @@ int main()
     test_nl_en_tokenizer_best_case();
     test_nl_en_tokenizer_worst_case();
 
+    printf("\n--- JavaScript TOKENIZER TESTS ---\n");
+    test_cl_js_tokenizer_best_case();
+    test_cl_js_tokenizer_worst_case();
+
     printf("\n--- CSS TOKENIZER TESTS ---\n");
     test_css_simple_rule();
     test_css_multiple_selectors();

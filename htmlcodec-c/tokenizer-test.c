@@ -1,5 +1,6 @@
 #include "tokenizer-test.h"
 #include "nl-en-tokenizer.h"
+#include "cl-javascript-en-tokenizer.h"
 
 int testsPassed = 0;
 int testsFailed = 0;
@@ -184,6 +185,17 @@ void test_nl_en_tokenizer_best_case() {
     assert_true(result != NULL, "English tokenizer result must not be NULL");
     printf("? NL-EN best case: input length %zu -> token count %zu\n", strlen(text), result->count);
     assert_true(result->count > 0, "English tokenizer best case: at least one token");
+
+    // Verify fallback has one-char granularity for unmatched boundaries
+    const char* text2 = "do d";
+    NLTokenArray* result2 = tokenizeEnglish(text2);
+    assert_true(result2 != NULL, "English tokenizer second best case must not be NULL");
+    assert_true(result2->tokens[0].isPattern, "NL-EN should match 'do' pattern first");
+    assert_true(result2->tokens[1].isPattern == false, "NL-EN second token should be space");
+    assert_true(result2->tokens[2].isPattern == false, "NL-EN third token should be unmatched 'd' (non-pattern)");
+    assert_equal_int(result2->count, 3, "NL-EN second best case count");
+    freeNLTokenArray(result2);
+
     freeNLTokenArray(result);
 }
 
@@ -195,6 +207,32 @@ void test_nl_en_tokenizer_worst_case() {
     printf("? NL-EN worst case: input length %zu -> token count %zu\n", strlen(text), result->count);
     assert_equal_int(result->count, (int)strlen(text), "English tokenizer worst case should produce one token per char (single-size fallback)");
     freeNLTokenArray(result);
+}
+
+void test_cl_js_tokenizer_best_case() {
+    const char* text = "function doFour()";
+    CLJSTokenArray* result = tokenizeJavaScript(text);
+    assert_true(result != NULL, "JS tokenizer result must not be NULL");
+    printf("? CL-JS best case: input length %zu -> token count %zu\n", strlen(text), result->count);
+    assert_true(result->count > 0, "JS tokenizer best case: should produce tokens");
+    assert_true(result->tokens[0].isPattern, "Token 0 should match 'function'");
+    assert_true(result->tokens[1].isPattern == false, "Token 1 should be space char");
+    assert_true(result->tokens[2].isPattern, "Token 2 should match 'do'");
+    freeCLJSTokenArray(result);
+}
+
+void test_cl_js_tokenizer_worst_case() {
+    size_t iterations = 1000;
+    char* buffer = (char*)malloc(iterations + 1);
+    for (size_t i = 0; i < iterations; i++) buffer[i] = 'x';
+    buffer[iterations] = '\0';
+
+    CLJSTokenArray* result = tokenizeJavaScript(buffer);
+    assert_true(result != NULL, "JS tokenizer worst case result must not be NULL");
+    printf("? CL-JS worst case: input length %zu -> token count %zu\n", strlen(buffer), result->count);
+    assert_true(result->count > 0, "JS tokenizer worst case: should produce tokens");
+    freeCLJSTokenArray(result);
+    free(buffer);
 }
 
 // CSS Tokenizer Tests - Best case scenarios

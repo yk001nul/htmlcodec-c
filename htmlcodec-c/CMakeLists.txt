@@ -15,6 +15,6 @@ set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Add source to this project's executable.
-add_executable (htmlcodec-c "htmlcodec-c.c" "html-tokenizer.c" "css-tokenizer.c" "nl-en-tokenizer.c" "tokenizer-test.c")
+add_executable (htmlcodec-c "htmlcodec-c.c" "html-tokenizer.c" "css-tokenizer.c" "nl-en-tokenizer.c" "cl-javascript-en-tokenizer.c" "tokenizer-test.c")
 
 # TODO: Add tests and install targets if needed.
