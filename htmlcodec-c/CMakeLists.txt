@@ -14,7 +14,30 @@ project ("htmlcodec-c" C)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Add source to this project's executable.
-add_executable (htmlcodec-c "htmlcodec-c.c" "html-tokenizer.c" "css-tokenizer.c" "nl-en-tokenizer.c" "cl-javascript-en-tokenizer.c" "tokenizer-test.c")
+enable_testing()
 
-# TODO: Add tests and install targets if needed.
+# Core tokenizer library target (static)
+add_library(htmlcodec-c-lib STATIC
+    html-tokenizer.c
+    css-tokenizer.c
+    nl-en-tokenizer.c
+    cl-javascript-en-tokenizer.c
+)
+
+target_include_directories(htmlcodec-c-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Main runtime executable (non-test)
+add_executable(htmlcodec-c
+    htmlcodec-c.c
+)
+target_link_libraries(htmlcodec-c PRIVATE htmlcodec-c-lib)
+
+# Test executable
+add_executable(htmlcodec-c-test
+    test-runner.c
+    tokenizer-test.c
+)
+target_link_libraries(htmlcodec-c-test PRIVATE htmlcodec-c-lib)
+
+add_test(NAME htmlcodec-c-test COMMAND htmlcodec-c-test)
+
