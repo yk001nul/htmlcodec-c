@@ -249,6 +249,24 @@ void test_cl_js_tokenizer_best_case() {
     freeCLJSTokenArray(result);
 }
 
+void test_cl_js_tokenizer_case_style_logic() {
+    const char* text = "function Th";
+    CLJSTokenArray* result = tokenizeJavaScript(text);
+    assert_true(result != NULL, "JS tokenizer case style result must not be NULL");
+    assert_equal_int(result->count, 3, "JS tokenizer case style should produce 3 tokens");
+
+    assert_true(result->tokens[0].isPattern, "Token 0 should match 'function'");
+    assert_equal_int(result->tokens[0].caseStyle, 3, "Non-digraph keyword should have caseStyle 3 (no change needed)");
+
+    assert_true(result->tokens[1].isPattern == false, "Token 1 should be space char");
+    assert_equal_int(result->tokens[1].caseStyle, 3, "Non-pattern character should have caseStyle 3 (no change needed)");
+
+    assert_true(result->tokens[2].isPattern, "Token 2 should match digraph 'Th'");
+    assert_equal_int(result->tokens[2].caseStyle, 2, "Digraph with first uppercase should have caseStyle 2");
+
+    freeCLJSTokenArray(result);
+}
+
 void test_cl_js_tokenizer_worst_case() {
     size_t iterations = 1000;
     char* buffer = (char*)malloc(iterations + 1);

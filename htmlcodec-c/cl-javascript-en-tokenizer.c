@@ -28,6 +28,7 @@ const char* CL_JS_EN_PATTERNS[CL_JS_EN_PATTERN_COUNT];
 
 static bool patternsInitialized = false;
 static size_t minPatternLen = 0;
+static bool patternIsDigraph[CL_JS_EN_PATTERN_COUNT] = { false };
 
 static int compare_pattern_length_desc(const void* a, const void* b) {
     int ia = *(const int*)a;
@@ -51,7 +52,7 @@ static bool equal_case_insensitive(const char* a, const char* b, size_t len) {
 }
 
 static int detect_case_style(const char* s, size_t len) {
-    if (len == 0) return 0;
+    if (len == 0) return 3; // no change needed for empty
     bool allLower = true;
     bool allUpper = true;
     for (size_t i = 0; i < len; i++) {
@@ -64,12 +65,9 @@ static int detect_case_style(const char* s, size_t len) {
     if (allLower) return 0;
     if (allUpper) return 1;
     bool firstUpper = false;
-    bool lastUpper = false;
     if (len > 0 && isalpha((unsigned char)s[0]) && isupper((unsigned char)s[0])) firstUpper = true;
-    if (len > 0 && isalpha((unsigned char)s[len - 1]) && isupper((unsigned char)s[len - 1])) lastUpper = true;
-    if (firstUpper && !lastUpper) return 2;
-    if (!firstUpper && lastUpper) return 3;
-    return 0;
+    if (firstUpper) return 2;
+    return 3; // mixed or other: no casing change / no explicit casing flag
 }
 
 static void initialize_patterns(void) {
@@ -86,6 +84,7 @@ static void initialize_patterns(void) {
     for (int i = 0; i < CL_JS_EN_PATTERN_COUNT; i++) {
         const char* p = rawPatterns[indices[i]];
         CL_JS_EN_PATTERNS[i] = p;
+        patternIsDigraph[i] = (indices[i] >= 160 && indices[i] < 224);
         size_t l = strlen(p);
         if (l < minPatternLen) {
             minPatternLen = l;
@@ -127,7 +126,10 @@ CLJSTokenArray* tokenizeJavaScript(const char* input) {
         }
 
         if (matched) {
-            int style = detect_case_style(input + pos, matchedLen);
+            int style = 3; // default: no casing change needed
+            if (patternIsDigraph[matchedIndex]) {
+                style = detect_case_style(input + pos, matchedLen);
+            }
             CLJSToken token = {true, matchedIndex, style};
             result->tokens[result->count++] = token;
             pos += matchedLen;
@@ -136,7 +138,7 @@ CLJSTokenArray* tokenizeJavaScript(const char* input) {
             if (toConsume > remaining) toConsume = remaining;
             for (size_t j = 0; j < toConsume && result->count < CL_JS_EN_MAX_TOKENS; j++) {
                 unsigned char ch = (unsigned char)input[pos + j];
-                int style = detect_case_style(&input[pos + j], 1);
+                int style = 3; // non-pattern case, preserve as no change-needed marker
                 CLJSToken token = {false, ch, style};
                 result->tokens[result->count++] = token;
             }
