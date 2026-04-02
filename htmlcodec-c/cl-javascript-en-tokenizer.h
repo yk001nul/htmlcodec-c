@@ -7,6 +7,7 @@
 #define CL_JS_EN_PATTERN_COUNT 256
 #define CL_JS_EN_MAX_TOKENS 8192
 
+extern const char* CL_JS_EN_RAW_PATTERNS[CL_JS_EN_PATTERN_COUNT];
 extern const char* CL_JS_EN_PATTERNS[CL_JS_EN_PATTERN_COUNT];
 
 typedef struct {

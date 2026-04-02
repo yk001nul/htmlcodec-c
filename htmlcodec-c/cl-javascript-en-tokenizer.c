@@ -2,7 +2,7 @@
 #include <string.h>
 #include <ctype.h>
 
-static const char* rawPatterns[CL_JS_EN_PATTERN_COUNT] = {
+const char* CL_JS_EN_RAW_PATTERNS[CL_JS_EN_PATTERN_COUNT] = {
     // 1) first 64 ES2025 reserved JavaScript keywords
     "await","break","case","catch","class","const","continue","debugger","default","delete","do","else","enum","export","extends","false","finally","for","function","if","implements","import","in","instanceof","interface","let","new","null","package","private","protected","public","return","static","super","switch","this","throw","true","try","typeof","var","void","while","with","yield","abstract","boolean","byte","char","double","final","float","goto","int","long","native","short","synchronized","throws","transient","volatile","as","of",
 
@@ -33,8 +33,8 @@ static bool patternIsDigraph[CL_JS_EN_PATTERN_COUNT] = { false };
 static int compare_pattern_length_desc(const void* a, const void* b) {
     int ia = *(const int*)a;
     int ib = *(const int*)b;
-    size_t la = strlen(rawPatterns[ia]);
-    size_t lb = strlen(rawPatterns[ib]);
+    size_t la = strlen(CL_JS_EN_RAW_PATTERNS[ia]);
+    size_t lb = strlen(CL_JS_EN_RAW_PATTERNS[ib]);
     if (la < lb) return 1;
     if (la > lb) return -1;
     return 0;
@@ -82,7 +82,7 @@ static void initialize_patterns(void) {
 
     minPatternLen = SIZE_MAX;
     for (int i = 0; i < CL_JS_EN_PATTERN_COUNT; i++) {
-        const char* p = rawPatterns[indices[i]];
+        const char* p = CL_JS_EN_RAW_PATTERNS[indices[i]];
         CL_JS_EN_PATTERNS[i] = p;
         patternIsDigraph[i] = (indices[i] >= 160 && indices[i] < 224);
         size_t l = strlen(p);

@@ -3,7 +3,7 @@
 #include <ctype.h>
 #include <stdio.h>
 
-static const char* rawPatterns[NL_EN_PATTERN_COUNT] = {
+const char* NL_EN_RAW_PATTERNS[NL_EN_PATTERN_COUNT] = {
     // first 64 common tokens (most frequently used English words, internet media)
     "the","be","to","of","and","even","in","that","have","also","it","for","not","on","with","he",
     "as","you","do","at","this","but","his","by","from","they","we","say","her","she","or","an",
@@ -42,8 +42,8 @@ static size_t minPatternLen = 0;
 static int compare_pattern_length_desc(const void* a, const void* b) {
     int ia = *(const int*)a;
     int ib = *(const int*)b;
-    size_t la = strlen(rawPatterns[ia]);
-    size_t lb = strlen(rawPatterns[ib]);
+    size_t la = strlen(NL_EN_RAW_PATTERNS[ia]);
+    size_t lb = strlen(NL_EN_RAW_PATTERNS[ib]);
     if (la < lb) return 1;
     if (la > lb) return -1;
     return 0;
@@ -95,7 +95,7 @@ static void initialize_patterns(void) {
 
     minPatternLen = SIZE_MAX;
     for (int i = 0; i < NL_EN_PATTERN_COUNT; i++) {
-        const char* p = rawPatterns[indices[i]];
+        const char* p = NL_EN_RAW_PATTERNS[indices[i]];
         NL_EN_PATTERNS[i] = p;
         size_t l = strlen(p);
         if (l < minPatternLen) {

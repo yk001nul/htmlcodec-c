@@ -7,6 +7,7 @@
 #define NL_EN_PATTERN_COUNT 256
 #define NL_EN_MAX_TOKENS 4096
 
+extern const char* NL_EN_RAW_PATTERNS[NL_EN_PATTERN_COUNT];
 extern const char* NL_EN_PATTERNS[NL_EN_PATTERN_COUNT];
 
 typedef struct {
