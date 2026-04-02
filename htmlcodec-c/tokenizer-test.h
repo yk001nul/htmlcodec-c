@@ -81,4 +81,12 @@ void test_css_complex_selectors();
 void test_css_empty_rules();
 void test_css_malformed_input();
 
+// NL-EN Codec tests
+void test_nl_en_codec_best_case();
+void test_nl_en_codec_worst_case();
+
+// NL-EN Integration tests (tokenizer + codec)
+void test_nl_en_integration_mobile_text();
+void test_nl_en_integration_professional_text();
+
 #endif // TOKENIZER_TEST_H

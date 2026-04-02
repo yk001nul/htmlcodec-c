@@ -141,6 +141,8 @@ NLTokenArray* tokenizeEnglish(const char* input) {
             int style = detect_case_style(input + pos, matchedLen);
             NLToken token = {true, matchedIndex, style};
             result->tokens[result->count++] = token;
+            printf("[NL-EN] Pattern matched: \"%s\" (index %d, caseStyle %d)\n", 
+                   NL_EN_PATTERNS[matchedIndex], matchedIndex, style);
             pos += matchedLen;
         } else {
             size_t toConsume = 1;
@@ -150,6 +152,8 @@ NLTokenArray* tokenizeEnglish(const char* input) {
                 int style = detect_case_style((const char*)&input[pos + j], 1);
                 NLToken token = {false, ch, style};
                 result->tokens[result->count++] = token;
+                printf("[NL-EN] ASCII char: '%c' (0x%02X, caseStyle %d)\n", 
+                       (ch >= 32 && ch < 127) ? ch : '?', ch, style);
             }
             pos += toConsume;
         }

@@ -1,5 +1,6 @@
 #include "tokenizer-test.h"
 #include "nl-en-tokenizer.h"
+#include "nl-en-codec.h"
 #include "cl-javascript-en-tokenizer.h"
 
 int testsPassed = 0;
@@ -464,8 +465,220 @@ void test_html_integrated_tokenizer_real_file() {
     printf("? HTML integrated tokenizer - real test file content\n");
 }
 
+// NL-EN Codec Tests
 
+void test_nl_en_codec_best_case() {
+    // Best case: small array with mixed tokens
+    NLTokenArray input;
+    input.count = 3;
+    
+    // Token 1: pattern token
+    input.tokens[0].isPattern = true;
+    input.tokens[0].flag = 5;      // pattern index 5
+    input.tokens[0].caseStyle = 2; // first uppercase
+    
+    // Token 2: non-pattern token
+    input.tokens[1].isPattern = false;
+    input.tokens[1].flag = 'A';    // ASCII 'A'
+    input.tokens[1].caseStyle = 0; // ignored
+    
+    // Token 3: pattern token
+    input.tokens[2].isPattern = true;
+    input.tokens[2].flag = 100;    // pattern index 100
+    input.tokens[2].caseStyle = 1; // all uppercase
+    
+    // Encode
+    size_t encodedSize = 0;
+    unsigned char* encoded = nl_en_encode(&input, input.count, &encodedSize);
+    assert_true(encoded != NULL, "Codec best case: encoded buffer should not be NULL");
+    assert_true(encodedSize > 0, "Codec best case: encoded size should be > 0");
+    
+    // Decode
+    NLTokenArray* decoded = nl_en_decode(encoded, encodedSize);
+    assert_true(decoded != NULL, "Codec best case: decoded array should not be NULL");
+    assert_equal_int(decoded->count, 3, "Codec best case: decoded count should match input");
+    
+    // Verify tokens
+    assert_equal_int(decoded->tokens[0].isPattern, 1, "Codec best case: token 0 isPattern");
+    assert_equal_int(decoded->tokens[0].flag, 5, "Codec best case: token 0 flag");
+    assert_equal_int(decoded->tokens[0].caseStyle, 2, "Codec best case: token 0 caseStyle");
+    
+    assert_equal_int(decoded->tokens[1].isPattern, 0, "Codec best case: token 1 isPattern");
+    assert_equal_int(decoded->tokens[1].flag, 'A', "Codec best case: token 1 flag (ASCII)");
+    
+    assert_equal_int(decoded->tokens[2].isPattern, 1, "Codec best case: token 2 isPattern");
+    assert_equal_int(decoded->tokens[2].flag, 100, "Codec best case: token 2 flag");
+    assert_equal_int(decoded->tokens[2].caseStyle, 1, "Codec best case: token 2 caseStyle");
+    
+    free(encoded);
+    freeNLTokenArray(decoded);
+    printf("? NL-EN Codec - best case (mixed tokens)\n");
+}
 
+void test_nl_en_codec_worst_case() {
+    // Worst case: maximum array size with all pattern tokens (maximal bit usage)
+    NLTokenArray input;
+    input.count = NL_EN_MAX_TOKENS;
+    
+    // Fill array with alternating pattern/non-pattern tokens to maximize bit variation
+    for (size_t i = 0; i < NL_EN_MAX_TOKENS; i++) {
+        if (i % 2 == 0) {
+            input.tokens[i].isPattern = true;
+            input.tokens[i].flag = (i % 256);  // cycle through all flag values
+            input.tokens[i].caseStyle = (i % 4); // cycle through all caseStyle values
+        } else {
+            input.tokens[i].isPattern = false;
+            input.tokens[i].flag = ((i * 7) % 256); // different ASCII values
+            input.tokens[i].caseStyle = 0;
+        }
+    }
+    
+    // Encode
+    size_t encodedSize = 0;
+    unsigned char* encoded = nl_en_encode(&input, input.count, &encodedSize);
+    assert_true(encoded != NULL, "Codec worst case: encoded buffer should not be NULL");
+    assert_true(encodedSize > 0, "Codec worst case: encoded size should be > 0");
+    
+    // Decode
+    NLTokenArray* decoded = nl_en_decode(encoded, encodedSize);
+    assert_true(decoded != NULL, "Codec worst case: decoded array should not be NULL");
+    assert_equal_int(decoded->count, NL_EN_MAX_TOKENS, "Codec worst case: decoded count should be max");
+    
+    // Spot check: verify several tokens across the array
+    int spot_checks_passed = 1;
+    
+    // Check token 0 (even index -> isPattern = true)
+    if (decoded->tokens[0].isPattern != 1 || 
+        decoded->tokens[0].flag != (0 % 256) ||
+        decoded->tokens[0].caseStyle != (0 % 4)) {
+        spot_checks_passed = 0;
+        printf("  Spot check failed at token 0\n");
+    }
+    
+    // Check token 1 (odd index -> isPattern = false)
+    if (decoded->tokens[1].isPattern != 0 ||
+        decoded->tokens[1].flag != ((1 * 7) % 256)) {
+        spot_checks_passed = 0;
+        printf("  Spot check failed at token 1\n");
+    }
+    
+    // Check token at middle (2048, even -> isPattern should be true)
+    size_t mid = NL_EN_MAX_TOKENS / 2;
+    int mid_isPattern = (mid % 2 == 0) ? 1 : 0;
+    int mid_flag = (mid % 2 == 0) ? (int)(mid % 256) : (int)((mid * 7) % 256);
+    int mid_caseStyle = (mid % 2 == 0) ? (int)(mid % 4) : 0;
+    
+    if (decoded->tokens[mid].isPattern != mid_isPattern ||
+        decoded->tokens[mid].flag != mid_flag ||
+        (mid_isPattern && decoded->tokens[mid].caseStyle != mid_caseStyle)) {
+        spot_checks_passed = 0;
+        printf("  Spot check failed at token %zu\n", mid);
+    }
+    
+    // Check last token (4095, odd -> isPattern should be false)
+    size_t last = NL_EN_MAX_TOKENS - 1;
+    int last_isPattern = (last % 2 == 0) ? 1 : 0;
+    int last_flag = (last % 2 == 0) ? (int)(last % 256) : (int)((last * 7) % 256);
+    
+    if (decoded->tokens[last].isPattern != last_isPattern ||
+        decoded->tokens[last].flag != last_flag) {
+        spot_checks_passed = 0;
+        printf("  Spot check failed at last token\n");
+    }
+    
+    assert_true(spot_checks_passed, "Codec worst case: spot checks should all pass");
+    
+    free(encoded);
+    freeNLTokenArray(decoded);
+    printf("? NL-EN Codec - worst case (max tokens, alternating pattern)\n");
+}
 
+// Helper function to compare two NLTokenArrays
+static int compare_token_arrays(const NLTokenArray* arr1, const NLTokenArray* arr2) {
+    if (!arr1 || !arr2) return 0;
+    if (arr1->count != arr2->count) return 0;
+    
+    for (size_t i = 0; i < arr1->count; i++) {
+        if (arr1->tokens[i].isPattern != arr2->tokens[i].isPattern) return 0;
+        if (arr1->tokens[i].flag != arr2->tokens[i].flag) return 0;
+        if (arr1->tokens[i].isPattern && arr1->tokens[i].caseStyle != arr2->tokens[i].caseStyle) {
+            return 0;
+        }
+    }
+    return 1;
+}
 
+void test_nl_en_integration_mobile_text() {
+    // Mobile phone style text: short, casual
+    const char* text = "hey whats up bro cant wait 2 c u l8r lol";
+    
+    // Tokenize
+    NLTokenArray* original = tokenizeEnglish(text);
+    assert_true(original != NULL, "Integration mobile: tokenize should succeed");
+    assert_true(original->count > 0, "Integration mobile: should produce tokens");
+    
+    size_t original_text_size = strlen(text);
+    
+    // Encode
+    size_t encoded_size = 0;
+    unsigned char* encoded = nl_en_encode(original, original->count, &encoded_size);
+    assert_true(encoded != NULL, "Integration mobile: encode should succeed");
+    assert_true(encoded_size > 0, "Integration mobile: encoded size should be > 0");
+    
+    // Decode
+    NLTokenArray* decoded = nl_en_decode(encoded, encoded_size);
+    assert_true(decoded != NULL, "Integration mobile: decode should succeed");
+    
+    // Verify correctness
+    int arrays_equal = compare_token_arrays(original, decoded);
+    assert_true(arrays_equal, "Integration mobile: decoded array should match original");
+    assert_equal_int(decoded->count, original->count, "Integration mobile: decoded count should match");
+    
+    // Calculate compression ratio
+    double compression = (1.0 - (double)encoded_size / (double)original_text_size) * 100.0;
+    printf("  Mobile text: %zu bytes -> %zu bytes (%.2f%% reduction, %.2f ratio vs gzip target)\n", 
+           original_text_size, encoded_size, compression, (double)original_text_size / (double)encoded_size);
+    
+    free(encoded);
+    freeNLTokenArray(original);
+    freeNLTokenArray(decoded);
+    printf("? NL-EN Integration - mobile phone style text\n");
+}
+
+void test_nl_en_integration_professional_text() {
+    // Professional style text: medium length, formal
+    const char* text = "The implementation of advanced data compression algorithms requires careful consideration of memory efficiency and processing speed. Our approach utilizes bit-level packing to minimize storage requirements while maintaining data integrity throughout the encoding and decoding process.";
+    
+    // Tokenize
+    NLTokenArray* original = tokenizeEnglish(text);
+    assert_true(original != NULL, "Integration professional: tokenize should succeed");
+    assert_true(original->count > 0, "Integration professional: should produce tokens");
+    
+    size_t original_text_size = strlen(text);
+    
+    // Encode
+    size_t encoded_size = 0;
+    unsigned char* encoded = nl_en_encode(original, original->count, &encoded_size);
+    assert_true(encoded != NULL, "Integration professional: encode should succeed");
+    assert_true(encoded_size > 0, "Integration professional: encoded size should be > 0");
+    
+    // Decode
+    NLTokenArray* decoded = nl_en_decode(encoded, encoded_size);
+    assert_true(decoded != NULL, "Integration professional: decode should succeed");
+    
+    // Verify correctness
+    int arrays_equal = compare_token_arrays(original, decoded);
+    assert_true(arrays_equal, "Integration professional: decoded array should match original");
+    assert_equal_int(decoded->count, original->count, "Integration professional: decoded count should match");
+    
+    // Calculate compression ratio
+    double compression = (1.0 - (double)encoded_size / (double)original_text_size) * 100.0;
+    printf("  Professional text: %zu bytes -> %zu bytes (%.2f%% reduction, %.2f ratio vs gzip target)\n", 
+           original_text_size, encoded_size, compression, (double)original_text_size / (double)encoded_size);
+    
+    free(encoded);
+    freeNLTokenArray(original);
+    freeNLTokenArray(decoded);
+    printf("? NL-EN Integration - professional style text\n");
+}
 

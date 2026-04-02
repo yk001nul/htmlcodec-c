@@ -45,6 +45,14 @@ int main(void) {
     test_html_integrated_tokenizer_both_content();
     test_html_integrated_tokenizer_real_file();
 
+    printf("\n--- NL-EN CODEC TESTS ---\n");
+    test_nl_en_codec_best_case();
+    test_nl_en_codec_worst_case();
+
+    printf("\n--- NL-EN INTEGRATION TESTS ---\n");
+    test_nl_en_integration_mobile_text();
+    test_nl_en_integration_professional_text();
+
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
 
