@@ -216,10 +216,10 @@ void test_nl_en_tokenizer_best_case() {
     assert_true(result->count > 0, "English tokenizer best case: at least one token");
 
     // Verify fallback has one-char granularity for unmatched boundaries
-    const char* text2 = "do d";
+    const char* text2 = "the d";
     NLTokenArray* result2 = tokenizeEnglish(text2);
     assert_true(result2 != NULL, "English tokenizer second best case must not be NULL");
-    assert_true(result2->tokens[0].isPattern, "NL-EN should match 'do' pattern first");
+    assert_true(result2->tokens[0].isPattern, "NL-EN should match 'the' pattern first");
     assert_true(result2->tokens[1].isPattern == false, "NL-EN second token should be space");
     assert_true(result2->tokens[2].isPattern == false, "NL-EN third token should be unmatched 'd' (non-pattern)");
     assert_equal_int(result2->count, 3, "NL-EN second best case count");

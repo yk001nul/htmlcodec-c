@@ -4,18 +4,11 @@
 #include <stdio.h>
 
 const char* NL_EN_RAW_PATTERNS[NL_EN_PATTERN_COUNT] = {
-    // first 64 common tokens (most frequently used English words, internet media)
-    "the","be","to","of","and","even","in","that","have","also","it","for","not","on","with","he",
-    "as","you","do","at","this","but","his","by","from","they","we","say","her","she","or","an",
-    "will","my","one","all","would","there","their","what","so","up","out","if","about","who","get","which",
-    "go","me","when","make","can","like","time","no","just","him","know","take","into","year","your","more",
+    // first 32 common short words (3-10 characters)
+    "the","and","are","but","can","for","from","had","has","have","her","him","his","how","its","let","may","new","not","now","old","one","put","say","she","that","they","this","why","will","with","you",
 
-    // next 64 words > 5 characters
-    "should","because","system","before","number","during","company","program","information","international","computer","business",
-    "service","community","project","through","between","government","important","different","development","example","security","internet",
-    "learning","sentence","language","research","history","product","performance","available","including","possible","support","process",
-    "culture","quality","education","significant","practice","function","analysis","technology","experience","software","network","material",
-    "mission","complete","specific","records","message","digital","virtual","general","modern","related","control","context","details","content","patterns","response",
+    // next 32 common long words (>10 characters)
+    "information","international","development","performance","significant","communication","administration","responsibility","organization","implementation","documentation","configuration","authentication","authorization","identification","verification","notification","registration","subscription","publication","distribution","collaboration","coordination","integration","optimization","customization","localization","globalization","standardization","modernization","synchronization","experience",
 
     // next 32 prefixes
     "pre","inter","un","dis","en","em","non","over","mis","sub","trans","super","semi","anti","mid","under",
@@ -25,13 +18,15 @@ const char* NL_EN_RAW_PATTERNS[NL_EN_PATTERN_COUNT] = {
     "ing","ed","er","ide","ion","tion","sion","ity","ness","ment","ful","less","ly","est","able","ible",
     "ant","ent","al","ive","ism","ize","ate","ist","ous","ary","ward","wise","ship","cy","ance","hood",
 
-    // next 32 trigraphs/clusters
+    // next 64 trigraphs/clusters
     "sch","thr","igh","ear","urs","nth","shr","chr","ght","tio","nce","pro","ter","ort","sti","sil",
     "str","sio","liv","wor","lei","fum","cha","qua","par","com","con","tra","uni","fla","pla","ver",
+    "the","and","ing","her","was","one","our","had","but","not","his","you","all","can","are","for","out","wit","thi","tha","ere","ent","ion","ati","man","est","abl","ive","les","ful","ant","ous",
 
-    // next 32 digraphs/clusters
+    // next 64 digraphs/clusters
     ", ", ". ", "th","hi","ae","xy","zk","qp","lv","mp","sn","dg","br","cl","fr","gr",
-    "hl","jh","kr","lp","mn","pt","sv","wv","xr","yz","bq","du","ez","fa","gs","qu"
+    "hl","jh","kr","lp","mn","pt","sv","wv","xr","yz","bq","du","ez","fa","gs","qu",
+    "he","in","er","an","re","ed","on","es","st","en","at","to","it","is","of","ar","te","se","nt","al","ti","co","de","or","ra","ce","li","ch","ne","me","il","le"
 };
 
 const char* NL_EN_PATTERNS[NL_EN_PATTERN_COUNT];
@@ -116,6 +111,8 @@ NLTokenArray* tokenizeEnglish(const char* input) {
     NLTokenArray* result = (NLTokenArray*)malloc(sizeof(NLTokenArray));
     if (!result) return NULL;
     result->count = 0;
+    int patternHit = 0;
+    int patternMiss = 0;
 
     size_t pos = 0;
     while (pos < inputLen && result->count < NL_EN_MAX_TOKENS) {
@@ -144,6 +141,7 @@ NLTokenArray* tokenizeEnglish(const char* input) {
             printf("[NL-EN] Pattern matched: \"%s\" (index %d, caseStyle %d)\n", 
                    NL_EN_PATTERNS[matchedIndex], matchedIndex, style);
             pos += matchedLen;
+            patternHit++;
         } else {
             size_t toConsume = 1;
             if (toConsume > remaining) toConsume = remaining;
@@ -156,8 +154,10 @@ NLTokenArray* tokenizeEnglish(const char* input) {
                        (ch >= 32 && ch < 127) ? ch : '?', ch, style);
             }
             pos += toConsume;
+            patternMiss++;
         }
     }
+    printf("[NL-EN] Pattern hits: %d, misses: %d\n", patternHit, patternMiss);
 
     return result;
 }
