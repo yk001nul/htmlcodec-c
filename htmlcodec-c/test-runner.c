@@ -53,6 +53,10 @@ int main(void) {
     test_nl_en_integration_mobile_text();
     test_nl_en_integration_professional_text();
 
+    printf("\n--- ZLIB VS NL-EN BENCHMARK TESTS ---\n");
+    test_zlib_compare_medium_text();
+    test_zlib_compare_long_text();
+
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
 

@@ -2,6 +2,7 @@
 #include "nl-en-tokenizer.h"
 #include "nl-en-codec.h"
 #include "cl-javascript-en-tokenizer.h"
+#include <zlib.h>
 
 int testsPassed = 0;
 int testsFailed = 0;
@@ -670,15 +671,130 @@ void test_nl_en_integration_professional_text() {
     int arrays_equal = compare_token_arrays(original, decoded);
     assert_true(arrays_equal, "Integration professional: decoded array should match original");
     assert_equal_int(decoded->count, original->count, "Integration professional: decoded count should match");
-    
+
     // Calculate compression ratio
     double compression = (1.0 - (double)encoded_size / (double)original_text_size) * 100.0;
-    printf("  Professional text: %zu bytes -> %zu bytes (%.2f%% reduction, %.2f ratio vs gzip target)\n", 
+    printf("  Professional text: %zu bytes -> %zu bytes (%.2f%% reduction, %.2f ratio vs gzip target)\n",
            original_text_size, encoded_size, compression, (double)original_text_size / (double)encoded_size);
-    
+
     free(encoded);
     freeNLTokenArray(original);
     freeNLTokenArray(decoded);
     printf("? NL-EN Integration - professional style text\n");
 }
 
+
+static void print_benchmark_row(const char* label, size_t input_len,
+                                size_t encoded_size, uLongf zlib_size) {
+    printf("  Input:         %zu bytes\n", input_len);
+    printf("  NL-EN encode:  %zu bytes (%.1f%% of original)\n",
+           encoded_size, (double)encoded_size / (double)input_len * 100.0);
+    printf("  zlib compress: %lu bytes (%.1f%% of original)\n",
+           (unsigned long)zlib_size, (double)zlib_size / (double)input_len * 100.0);
+    (void)label;
+}
+
+void test_zlib_compare_medium_text() {
+    const char* text =
+        "The global software industry continues to evolve at an unprecedented pace, "
+        "driven by advances in artificial intelligence, cloud computing, and distributed "
+        "systems. Organizations must adapt their development processes to remain competitive "
+        "in an increasingly complex technological landscape. Effective architecture decisions "
+        "require balancing performance, maintainability, and scalability while managing "
+        "technical debt and ensuring long-term sustainability of the codebase. Engineering "
+        "teams that invest in robust testing infrastructure and continuous integration "
+        "pipelines consistently deliver higher quality products with fewer defects.";
+
+    size_t input_len = strlen(text);
+
+    NLTokenArray* tokens = tokenizeEnglish(text);
+    assert_true(tokens != NULL, "zlib compare medium: tokenize should succeed");
+    assert_true(tokens->count > 0, "zlib compare medium: should produce tokens");
+
+    size_t nlen_size = 0;
+    unsigned char* nlen_encoded = nl_en_encode(tokens, tokens->count, &nlen_size);
+    assert_true(nlen_encoded != NULL, "zlib compare medium: NL-EN encode should succeed");
+    assert_true(nlen_size > 0, "zlib compare medium: NL-EN encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "zlib compare medium: malloc for zlib buffer should succeed");
+
+    int zlib_result = compress(zlib_dest, &zlib_dest_len,
+                               (const Bytef*)text, (uLong)input_len);
+    assert_true(zlib_result == Z_OK, "zlib compare medium: compress should return Z_OK");
+    assert_true(zlib_dest_len > 0, "zlib compare medium: zlib compressed size > 0");
+
+    print_benchmark_row("medium", input_len, nlen_size, zlib_dest_len);
+
+    free(nlen_encoded);
+    free(zlib_dest);
+    freeNLTokenArray(tokens);
+    printf("PASS zlib vs NL-EN compare - medium professional text\n");
+}
+
+void test_zlib_compare_long_text() {
+    const char* text =
+        "Modern software engineering encompasses a broad spectrum of disciplines, from "
+        "low-level systems programming to high-level application development. The design "
+        "of efficient data compression algorithms represents one of the foundational "
+        "challenges in computer science, with applications ranging from file archiving "
+        "and network transmission to database storage and real-time streaming.\n\n"
+        "Dictionary-based compression methods, such as the LZ77 algorithm that underpins "
+        "the zlib library, achieve high compression ratios by replacing repeated byte "
+        "sequences with compact references to earlier occurrences in the input stream. "
+        "This approach is particularly effective for structured text and source code, "
+        "where keywords, identifiers, and common phrases recur frequently throughout "
+        "a document. The deflate format combines LZ77 with Huffman coding to further "
+        "reduce the entropy of the compressed output.\n\n"
+        "Domain-specific encoders take a different approach by exploiting prior knowledge "
+        "about the expected content. Rather than discovering patterns dynamically, they "
+        "rely on pre-built dictionaries of high-frequency tokens derived from large "
+        "corpora. For English-language text, a relatively small vocabulary of common "
+        "words, prefixes, suffixes, and character digraphs can cover a substantial "
+        "fraction of any typical document. Each matched token is then represented as a "
+        "single index into the dictionary, often requiring fewer bits than a general-"
+        "purpose compressor would allocate to the same sequence.\n\n"
+        "The trade-off between generality and specialization is a recurring theme in "
+        "compression research. General-purpose compressors like zlib offer predictable "
+        "performance across diverse input types and require no assumptions about content "
+        "structure. Specialized encoders can outperform general compressors on their "
+        "target domain but may expand data that falls outside their expected vocabulary. "
+        "Hybrid strategies that combine a domain-specific first pass with a general "
+        "entropy coder in a second pass are common in practice, with formats such as "
+        "Brotli and Zstandard incorporating pre-defined dictionaries alongside adaptive "
+        "statistical models to achieve strong compression across a wide range of inputs.\n\n"
+        "Benchmarking compression algorithms requires careful attention to methodology. "
+        "Compression ratio, encoding speed, and decoding speed are the primary metrics, "
+        "but memory consumption, parallelization potential, and streaming capability also "
+        "influence algorithm selection in production environments. A fair comparison must "
+        "use representative input data, consistent measurement conditions, and multiple "
+        "runs to account for processor cache effects and scheduling variability.";
+
+    size_t input_len = strlen(text);
+
+    NLTokenArray* tokens = tokenizeEnglish(text);
+    assert_true(tokens != NULL, "zlib compare long: tokenize should succeed");
+    assert_true(tokens->count > 0, "zlib compare long: should produce tokens");
+
+    size_t nlen_size = 0;
+    unsigned char* nlen_encoded = nl_en_encode(tokens, tokens->count, &nlen_size);
+    assert_true(nlen_encoded != NULL, "zlib compare long: NL-EN encode should succeed");
+    assert_true(nlen_size > 0, "zlib compare long: NL-EN encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "zlib compare long: malloc for zlib buffer should succeed");
+
+    int zlib_result = compress(zlib_dest, &zlib_dest_len,
+                               (const Bytef*)text, (uLong)input_len);
+    assert_true(zlib_result == Z_OK, "zlib compare long: compress should return Z_OK");
+    assert_true(zlib_dest_len > 0, "zlib compare long: zlib compressed size > 0");
+
+    print_benchmark_row("long", input_len, nlen_size, zlib_dest_len);
+
+    free(nlen_encoded);
+    free(zlib_dest);
+    freeNLTokenArray(tokens);
+    printf("PASS zlib vs NL-EN compare - long professional text\n");
+}

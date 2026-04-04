@@ -16,6 +16,18 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 enable_testing()
 
+# --- zlib (fetched from official source) ---
+include(FetchContent)
+
+set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    zlib
+    URL https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(zlib)
+
 # Core tokenizer library target (static)
 add_library(htmlcodec-c-lib STATIC
     html-tokenizer.c
@@ -38,7 +50,8 @@ add_executable(htmlcodec-c-test
     test-runner.c
     tokenizer-test.c
 )
-target_link_libraries(htmlcodec-c-test PRIVATE htmlcodec-c-lib)
+target_link_libraries(htmlcodec-c-test PRIVATE htmlcodec-c-lib zlibstatic)
+target_include_directories(htmlcodec-c-test PRIVATE ${zlib_SOURCE_DIR} ${zlib_BINARY_DIR})
 
 add_test(NAME htmlcodec-c-test COMMAND htmlcodec-c-test)
 

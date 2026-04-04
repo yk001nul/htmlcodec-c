@@ -89,4 +89,8 @@ void test_nl_en_codec_worst_case();
 void test_nl_en_integration_mobile_text();
 void test_nl_en_integration_professional_text();
 
+// zlib vs NL-EN benchmark tests
+void test_zlib_compare_medium_text();
+void test_zlib_compare_long_text();
+
 #endif // TOKENIZER_TEST_H
