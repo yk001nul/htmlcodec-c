@@ -4,51 +4,74 @@
 #include <stdio.h>
 
 const char* NL_EN_RAW_PATTERNS[NL_EN_PATTERN_COUNT] = {
-    // Section 1: 24 most common CV syllables (consonant + vowel, 2 chars)
+    // Section 1: 48 most common CV syllables (consonant + vowel, 2 chars)
     "be","me","he","we","te","to","go","do","no","so","lo","by",
     "my","la","ma","pa","na","ha","li","hi","ti","di","bu","ye",
+    "le","se","fe","ge","ke","ne","pe","ve","ze","co","fo","ho",
+    "mo","ro","bo","lu","mu","nu","ru","su","ku","pu","tu","wo",
 
-    // Section 2: 24 most common CVC syllables #1 (consonant + vowel + consonant, 3 chars)
+    // Section 2: 48 most common CVC syllables (consonant + vowel + consonant, 3 chars)
     "can","man","had","has","him","his","not","but","let","get","set","met",
     "cut","run","sun","win","bit","sit","hit","hot","top","fix","mix","six",
-
-    // Section 3: 24 most common CCV syllables #1 (consonant cluster + vowel, 3 chars)
-    "pro","pri","pra","tra","tre","tri","tro","bra","bre","bri","gra","gre",
-    "gri","cra","cre","dra","dre","dri","fla","fle","pla","ple","sla","the",
-
-    // Section 4: 24 most common CCV syllables #2 (consonant cluster + vowel, 3 chars)
-    "bla","ble","blo","bru","cla","cle","cli","clo","cri","cro","fro","glo",
-    "glu","plo","plu","sca","ski","sna","sni","sta","ste","sti","sto","swi",
-
-    // Section 5: 24 most common CVC syllables #2 (consonant + vowel + consonant, 3 chars)
     "pan","tan","ran","ban","fan","van","den","hen","men","ten","fin","gin",
     "kin","pin","tin","bon","con","son","ton","fun","gun","nun","pun","tun",
 
-    // Section 6: 24 most common CVCC syllables (consonant + vowel + 2 consonants, 4 chars)
+    // Section 3: 48 most common CCV syllables (consonant cluster + vowel, 3 chars)
+    "pro","pri","pra","tra","tre","tri","tro","bra","bre","bri","gra","gre",
+    "gri","cra","cre","dra","dre","dri","fla","fle","pla","ple","sla","the",
+    "bla","ble","blo","bru","cla","cle","cli","clo","cri","cro","fro","glo",
+    "glu","plo","plu","sca","ski","sna","sni","sta","ste","sti","sto","swi",
+
+    // Section 4: 48 most common CVCC syllables (consonant + vowel + 2 consonants, 4 chars)
     "band","land","hand","sand","hard","park","mark","dark","bark","best","rest","test",
     "west","past","last","fast","cast","list","fist","mist","lost","cost","dust","rust",
+    "bold","fold","gold","hold","told","find","kind","mind","bind","lend","bend","send",
+    "mend","tent","rent","dent","bent","lent","went","cent","salt","halt","malt","cold",
 
-    // Section 7: 24 most common VC syllables (vowel + consonant, 2 chars)
+    // Section 5: 48 most common VC syllables (vowel + consonant, 2 chars)
     "at","an","in","it","on","up","am","as","is","of","or","us",
     "ab","ad","ar","av","ax","et","ev","ub","uc","ud","uf","ug",
+    "az","ag","ak","ap","aw","ay","el","ep","oz","ob","oc","og",
+    "ok","ol","om","op","ot","ov","ow","ul","ut","ix","if","ux",
 
-    // Section 8: 24 most common VCC syllables (vowel + 2 consonants, 3 chars)
+    // Section 6: 48 most common VCC syllables (vowel + 2 consonants, 3 chars)
     "and","end","old","art","ask","elf","ind","ost","ust","ast","ect","ang",
     "ong","ung","ank","ink","unk","ald","elt","ort","ond","aft","oft","ilt",
+    "ard","ark","arm","elm","amp","apt","arc","erk","erm","erb","ork","orm",
+    "orn","orp","irk","irm","irl","ick","ilk","ild","isk","orc","olf","iff",
 
-    // Section 9: 8 most common CCC consonant clusters
+    // Section 7: 16 most common CCC consonant clusters (3 consonants)
     "str","scr","spr","spl","squ","nth","shr","thr",
+    "phr","chr","sch","nst","rst","nts","lts","mps",
 
-    // Section 10: Top 24 prefixes
+    // Section 8: Top 48 prefixes
     "pre","inter","un","dis","en","em","non","over","mis","sub","trans","super",
     "semi","anti","mid","under","fore","post","auto","bi","re","multi","de","ex",
+    "out","bio","down","counter","com","ir","il","im","hyper","micro","macro","meta",
+    "para","per","poly","tele","uni","vice","with","eco","geo","neo","omni","endo",
 
-    // Section 11: Top 24 suffixes
+    // Section 9: Top 48 suffixes (base)
     "ing","ed","er","ion","tion","sion","ity","ness","ment","ful","less","ly",
     "est","able","ible","ant","ent","al","ive","ism","ize","ate","ist","ous",
+    "ary","ery","ory","ure","age","ish","ward","wise","ile","ling","hood","ship",
+    "dom","fy","ese","ette","ence","ance","ency","ancy","acy","ogy","omy","ony",
 
-    // Section 12: Top 8 non-alphanumeric digraphs
-    ". ",", ","? ","! ","; ",": ","- ","' "
+    // Section 9 (cont.): 80 additional suffix/word-ending patterns to reach 512 total
+    "ify","eous","ious","uous","ade","oid","form","gram","graph","logy","metry","nomy",
+    "path","phile","scope","ware","work","ial","most","bound","proof","side","time","way",
+    "craft","mate","tude","ation","aire","eur","ier","ster","eer","ite","ular","naut",
+    "phon","tron","cide","ical","ulous","ative","itive","ified","itis","otic","emic","onic",
+    "anic","olic","ific","tic","nic","mic","ric","lic","sis","xis","ule","ern","sel","oon",
+    "ine","gamy","archy","cracy","fuge","vore","burg","like","ose","ase","ise","awn",
+    "eal","ain","eak","ean","ear","eat",
+
+    // Section 10: 16 most common non-syllable trigraphs in English
+    "ght","nce","tch","dge","ugh","rth","nge","lth",
+    "rld","ths","ngs","nds","rks","lls","mpt","xth",
+
+    // Section 11: Top 16 digraphs (including apostrophe-s)
+    ". ",", ","? ","! ","; ",": ","- ","' ",
+    "'s"," a"," t"," o"," s"," i"," e"," n"
 };
 
 const char* NL_EN_PATTERNS[NL_EN_PATTERN_COUNT];
@@ -154,7 +177,7 @@ NLTokenArray* tokenizeEnglish(const char* input) {
             if (pLen == 0 || pLen > pos) continue;
             if (equal_case_insensitive(input + (pos - pLen), pattern, pLen)) {
                 int style = detect_case_style(input + (pos - pLen), pLen);
-                NLToken token = {true, (unsigned char)i, style};
+                NLToken token = {true, (unsigned short)i, style};
                 result->tokens[result->count++] = token;
                 //printf("[NL-EN] Pattern matched: \"%s\" (index %d, caseStyle %d)\n",
                 //       NL_EN_PATTERNS[i], i, style);

@@ -525,7 +525,7 @@ void test_nl_en_codec_worst_case() {
     for (size_t i = 0; i < NL_EN_MAX_TOKENS; i++) {
         if (i % 2 == 0) {
             input.tokens[i].isPattern = true;
-            input.tokens[i].flag = (i % 256);  // cycle through all flag values
+            input.tokens[i].flag = (unsigned short)(i % NL_EN_PATTERN_COUNT);  // cycle 0-511
             input.tokens[i].caseStyle = (i % 4); // cycle through all caseStyle values
         } else {
             input.tokens[i].isPattern = false;
@@ -549,38 +549,38 @@ void test_nl_en_codec_worst_case() {
     int spot_checks_passed = 1;
     
     // Check token 0 (even index -> isPattern = true)
-    if (decoded->tokens[0].isPattern != 1 || 
-        decoded->tokens[0].flag != (0 % 256) ||
+    if (decoded->tokens[0].isPattern != 1 ||
+        decoded->tokens[0].flag != (0 % NL_EN_PATTERN_COUNT) ||
         decoded->tokens[0].caseStyle != (0 % 4)) {
         spot_checks_passed = 0;
         printf("  Spot check failed at token 0\n");
     }
-    
+
     // Check token 1 (odd index -> isPattern = false)
     if (decoded->tokens[1].isPattern != 0 ||
         decoded->tokens[1].flag != ((1 * 7) % 256)) {
         spot_checks_passed = 0;
         printf("  Spot check failed at token 1\n");
     }
-    
+
     // Check token at middle (2048, even -> isPattern should be true)
     size_t mid = NL_EN_MAX_TOKENS / 2;
     int mid_isPattern = (mid % 2 == 0) ? 1 : 0;
-    int mid_flag = (mid % 2 == 0) ? (int)(mid % 256) : (int)((mid * 7) % 256);
+    int mid_flag = (mid % 2 == 0) ? (int)(mid % NL_EN_PATTERN_COUNT) : (int)((mid * 7) % 256);
     int mid_caseStyle = (mid % 2 == 0) ? (int)(mid % 4) : 0;
-    
+
     if (decoded->tokens[mid].isPattern != mid_isPattern ||
         decoded->tokens[mid].flag != mid_flag ||
         (mid_isPattern && decoded->tokens[mid].caseStyle != mid_caseStyle)) {
         spot_checks_passed = 0;
         printf("  Spot check failed at token %zu\n", mid);
     }
-    
+
     // Check last token (4095, odd -> isPattern should be false)
     size_t last = NL_EN_MAX_TOKENS - 1;
     int last_isPattern = (last % 2 == 0) ? 1 : 0;
-    int last_flag = (last % 2 == 0) ? (int)(last % 256) : (int)((last * 7) % 256);
-    
+    int last_flag = (last % 2 == 0) ? (int)(last % NL_EN_PATTERN_COUNT) : (int)((last * 7) % 256);
+
     if (decoded->tokens[last].isPattern != last_isPattern ||
         decoded->tokens[last].flag != last_flag) {
         spot_checks_passed = 0;

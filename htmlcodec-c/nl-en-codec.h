@@ -11,8 +11,12 @@
  * Bit layout:
  * - Bits 0-12: Array count (13 bits for NL_EN_MAX_TOKENS=4096)
  * - For each NLToken:
- *   - If isPattern=true: 11 bits (1 + 8 flag bits + 2 caseStyle bits)
- *   - If isPattern=false: 9 bits (0 + 8 flag bits)
+ *   - If isPattern=true:  variable width 8-16 bits:
+ *       1 bit  isPattern=1
+ *       4 bits bit-length N of the index value (1..9)
+ *       N bits index value without leading zeros (1 bit min, 9 bits max for index 511)
+ *       2 bits caseStyle
+ *   - If isPattern=false: 9 bits (0 + 8 ASCII char bits)
  *
  * @param arr The NLTokenArray to encode
  * @param count The number of tokens to encode (must be <= arr->count)
