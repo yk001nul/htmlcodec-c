@@ -79,16 +79,6 @@ const char* NL_EN_PATTERNS[NL_EN_PATTERN_COUNT];
 static bool patternsInitialized = false;
 static size_t minPatternLen = 0;
 
-static int compare_pattern_length_desc(const void* a, const void* b) {
-    int ia = *(const int*)a;
-    int ib = *(const int*)b;
-    size_t la = strlen(NL_EN_RAW_PATTERNS[ia]);
-    size_t lb = strlen(NL_EN_RAW_PATTERNS[ib]);
-    if (la < lb) return 1;
-    if (la > lb) return -1;
-    return 0;
-}
-
 static bool equal_case_insensitive(const char* a, const char* b, size_t len) {
     for (size_t i = 0; i < len; i++) {
         char ca = a[i];
@@ -125,22 +115,55 @@ static int detect_case_style(const char* s, size_t len) {
 static void initialize_patterns(void) {
     if (patternsInitialized) return;
 
-    // Build sorted pattern table by descending length (longest first, shortest last)
-    int indices[NL_EN_PATTERN_COUNT];
-    for (int i = 0; i < NL_EN_PATTERN_COUNT; i++) {
-        indices[i] = i;
+    // Section boundaries in NL_EN_RAW_PATTERNS (ordered by frequency, high to low).
+    // Patterns within the same section share similar frequency; their position within
+    // the section (round index) indicates relative frequency rank.
+    #define NL_EN_NUM_SECTIONS 12
+    static const int section_starts[NL_EN_NUM_SECTIONS] = {  0, 48, 96, 144, 192, 240, 288, 304, 352, 400, 480, 496 };
+    static const int section_sizes[NL_EN_NUM_SECTIONS]  = { 48, 48, 48,  48,  48,  48,  16,  48,  48,  80,  16,  16 };
+
+    // Find the maximum section size to know how many rounds to run.
+    int max_size = 0;
+    for (int s = 0; s < NL_EN_NUM_SECTIONS; s++) {
+        if (section_sizes[s] > max_size) max_size = section_sizes[s];
     }
 
-    qsort(indices, NL_EN_PATTERN_COUNT, sizeof(int), compare_pattern_length_desc);
+    // Round-robin: each round picks one element per section (at that round's index),
+    // sorts the batch by ascending character length, then appends to the output.
+    // This groups the most-common patterns (round 0) first, improving index locality
+    // for compression while keeping short patterns reachable early in each round.
+    int out_count = 0;
+    int batch[NL_EN_NUM_SECTIONS];
+
+    for (int round = 0; round < max_size; round++) {
+        int batch_count = 0;
+        for (int s = 0; s < NL_EN_NUM_SECTIONS; s++) {
+            if (round < section_sizes[s]) {
+                batch[batch_count++] = section_starts[s] + round;
+            }
+        }
+
+        // Insertion sort ascending by pattern length (batch_count <= NL_EN_NUM_SECTIONS).
+        for (int i = 1; i < batch_count; i++) {
+            int key = batch[i];
+            size_t key_len = strlen(NL_EN_RAW_PATTERNS[key]);
+            int j = i - 1;
+            while (j >= 0 && strlen(NL_EN_RAW_PATTERNS[batch[j]]) > key_len) {
+                batch[j + 1] = batch[j];
+                j--;
+            }
+            batch[j + 1] = key;
+        }
+
+        for (int i = 0; i < batch_count; i++) {
+            NL_EN_PATTERNS[out_count++] = NL_EN_RAW_PATTERNS[batch[i]];
+        }
+    }
 
     minPatternLen = SIZE_MAX;
     for (int i = 0; i < NL_EN_PATTERN_COUNT; i++) {
-        const char* p = NL_EN_RAW_PATTERNS[indices[i]];
-        NL_EN_PATTERNS[i] = p;
-        size_t l = strlen(p);
-        if (l < minPatternLen) {
-            minPatternLen = l;
-        }
+        size_t l = strlen(NL_EN_PATTERNS[i]);
+        if (l < minPatternLen) minPatternLen = l;
     }
     if (minPatternLen == SIZE_MAX || minPatternLen == 0) {
         minPatternLen = 1;
@@ -179,8 +202,8 @@ NLTokenArray* tokenizeEnglish(const char* input) {
                 int style = detect_case_style(input + (pos - pLen), pLen);
                 NLToken token = {true, (unsigned short)i, style};
                 result->tokens[result->count++] = token;
-                //printf("[NL-EN] Pattern matched: \"%s\" (index %d, caseStyle %d)\n",
-                //       NL_EN_PATTERNS[i], i, style);
+                printf("[NL-EN] Pattern matched: \"%s\" (index %d, caseStyle %d)\n",
+                       NL_EN_PATTERNS[i], i, style);
                 pos -= pLen;
                 patternHit++;
                 if (pLen <= NL_EN_HISTOGRAM_MAX_LEN) histogram[pLen]++;
