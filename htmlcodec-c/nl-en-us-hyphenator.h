@@ -30,6 +30,26 @@ typedef struct {
     size_t  count;
 } KLTokenArray;
 
+// Frequency entry: one unique string from a KLTokenArray and its occurrence count.
+typedef struct {
+    char text[KL_MAX_TOKEN_TEXT]; // the unique string (same buffer width as KLToken)
+    int  frequency;               // number of times this string appears in the source array
+} KLStringFreq;
+
+// Frequency map built from a completed KLTokenArray.
+// Entries are sorted by frequency descending so the most common strings come first.
+typedef struct {
+    KLStringFreq entries[KL_MAX_TOKENS]; // fixed-capacity: at most one entry per source token
+    size_t       uniqueCount;            // number of distinct strings populated
+    size_t       totalTokens;            // arr->count of the source KLTokenArray
+} KLFreqMap;
+
+// Build a frequency map from a completed token array.
+// Returns a heap-allocated KLFreqMap sorted by frequency descending;
+// caller must call freeKLFreqMap().
+KLFreqMap* collectKLFrequencies(const KLTokenArray* arr);
+void freeKLFreqMap(KLFreqMap* map);
+
 // Trie node for the Knuth-Liang hyphenation algorithm.
 // Children indexed by: 'a'-'z' -> 0-25, '.' -> 26.
 #define KL_TRIE_ALPHA 27

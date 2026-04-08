@@ -96,5 +96,10 @@ void test_zlib_compare_long_text();
 // Knuth-Liang hyphenator tests
 void test_kl_hyphenator_best_case();
 void test_kl_hyphenator_worst_case();
+void test_kl_hyphenator_professional_text();
+
+// Knuth-Liang frequency map tests
+void test_kl_freqmap_good_hyphenation();
+void test_kl_freqmap_bad_hyphenation();
 
 #endif // TOKENIZER_TEST_H

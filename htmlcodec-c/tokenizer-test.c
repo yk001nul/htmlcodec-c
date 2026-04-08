@@ -874,3 +874,219 @@ void test_kl_hyphenator_worst_case(void) {
 
     printf("PASS KL hyphenator - worst case\n");
 }
+
+/* Professional text test: tokenize a magazine-style English passage and verify
+   structural correctness of the hyphenation output across a realistic corpus. */
+void test_kl_hyphenator_professional_text(void) {
+    static const char* text =
+        "The rapid advancement of artificial intelligence has fundamentally transformed "
+        "the way organizations approach decision-making and problem-solving across virtually "
+        "every industry. Machine learning algorithms, particularly deep neural networks, "
+        "have demonstrated remarkable capabilities in pattern recognition, natural language "
+        "understanding, and generative tasks that were previously considered exclusive "
+        "to human intelligence.\n\n"
+        "Researchers and practitioners continue to investigate the theoretical foundations "
+        "underlying these models, seeking to understand why certain architectures generalize "
+        "effectively while others overfit or fail to converge during training. Regularization "
+        "techniques, attention mechanisms, and transfer learning have emerged as powerful "
+        "strategies for improving model performance without proportionally increasing "
+        "computational requirements.\n\n"
+        "The deployment of large-scale language models has introduced new considerations "
+        "around interpretability, fairness, and environmental sustainability. Organizations "
+        "must balance the competitive advantages offered by sophisticated AI systems against "
+        "the infrastructure costs, energy consumption, and potential societal implications "
+        "associated with widespread adoption. Governance frameworks and international "
+        "standards bodies are actively working to establish guidelines that promote "
+        "responsible innovation while preserving the benefits of technological progress.\n\n"
+        "Looking ahead, researchers anticipate continued improvements in multimodal "
+        "understanding, reasoning under uncertainty, and efficient inference on edge devices. "
+        "The convergence of hardware acceleration, novel training paradigms, and curated "
+        "high-quality datasets is expected to unlock capabilities that remain out of reach "
+        "with current approaches. As the field matures, interdisciplinary collaboration "
+        "between computer scientists, ethicists, domain experts, and policymakers will "
+        "become increasingly essential to navigating the complex landscape of modern "
+        "artificial intelligence research and deployment.";
+
+    KLTokenArray* arr = tokenizeKnuthLiang(text);
+    assert_true(arr != NULL, "KL professional: result not NULL");
+    if (!arr) return;
+
+    /* Should produce a substantial number of tokens from this length of text */
+    assert_true((int)arr->count > 300,
+                "KL professional: long text should produce > 300 tokens");
+    assert_true((int)arr->count <= KL_MAX_TOKENS,
+                "KL professional: token count within fixed array capacity");
+
+    int hyphenated_count = 0;
+    int word_count       = 0;
+    bool invariants_ok   = true;
+
+    for (size_t i = 0; i < arr->count; i++) {
+        KLToken* t = &arr->tokens[i];
+
+        /* Every token must have non-zero length */
+        if (t->length == 0) { invariants_ok = false; break; }
+
+        unsigned char fc = (unsigned char)t->text[0];
+        bool is_delim = !(fc >= 32 && fc < 128 && KL_ASCII_PATTERNS[fc - 32]);
+
+        if (is_delim) {
+            /* Delimiter tokens must never be marked as hyphenated and must have caseStyle 0 */
+            if (t->isHyphenated || t->caseStyle != 0) { invariants_ok = false; break; }
+        } else {
+            word_count++;
+            if (t->isHyphenated) hyphenated_count++;
+        }
+    }
+
+    assert_true(invariants_ok,
+                "KL professional: all tokens satisfy delimiter/caseStyle invariants");
+
+    /* A meaningful fraction of word tokens should be hyphenated syllables —
+       professional text contains many polysyllabic words. */
+    assert_true(word_count > 150,
+                "KL professional: text should yield > 150 word tokens");
+    assert_true(hyphenated_count > 80,
+                "KL professional: > 80 syllable tokens expected from polysyllabic vocabulary");
+
+    int total_count = (int)arr->count;
+    freeKLTokenArray(arr);
+    printf("PASS KL hyphenator - professional text (%d tokens, %d hyphenated syllables)\n",
+           total_count, hyphenated_count);
+}
+
+/* ---- Frequency map tests ---- */
+
+/* Good hyphenation: a medium-length passage rich in polysyllabic words.
+   After tokenization the frequency map should show many distinct syllables,
+   common short syllables recurring multiple times, and entries sorted
+   descending by frequency. */
+void test_kl_freqmap_good_hyphenation(void) {
+    static const char* text =
+        "Scientists investigating the underlying mechanisms of biological evolution "
+        "have discovered remarkable patterns of adaptation and diversification across "
+        "generations. The development of genetic sequencing technologies has accelerated "
+        "our understanding of hereditary information, revealing how populations accumulate "
+        "mutations and respond to environmental pressures over extended periods. "
+        "Computational models of evolutionary dynamics help researchers anticipate "
+        "trajectories of change and identify the selective pressures responsible for "
+        "observable morphological and behavioral transformations.";
+
+    KLTokenArray* arr = tokenizeKnuthLiang(text);
+    assert_true(arr != NULL, "KL freqmap good: tokenize returned non-NULL");
+    if (!arr) return;
+
+    KLFreqMap* map = collectKLFrequencies(arr);
+    assert_true(map != NULL, "KL freqmap good: collectKLFrequencies returned non-NULL");
+    if (!map) { freeKLTokenArray(arr); return; }
+
+    /* totalTokens must equal the source array count */
+    assert_equal_int((int)map->totalTokens, (int)arr->count,
+                     "KL freqmap good: totalTokens matches source count");
+
+    /* uniqueCount must be <= totalTokens and > 0 */
+    assert_true((int)map->uniqueCount > 0,
+                "KL freqmap good: at least one unique string");
+    assert_true(map->uniqueCount <= map->totalTokens,
+                "KL freqmap good: uniqueCount <= totalTokens");
+
+    /* Polysyllabic text has repetition — expect meaningful deduplication */
+    assert_true(map->uniqueCount < map->totalTokens,
+                "KL freqmap good: repeated strings produce fewer unique entries than tokens");
+
+    /* Entries must be sorted descending by frequency */
+    bool sorted = true;
+    for (size_t i = 1; i < map->uniqueCount; i++) {
+        if (map->entries[i].frequency > map->entries[i - 1].frequency)
+            { sorted = false; break; }
+    }
+    assert_true(sorted, "KL freqmap good: entries sorted descending by frequency");
+
+    /* Every frequency must be >= 1 and every text non-empty */
+    bool valid_entries = true;
+    for (size_t i = 0; i < map->uniqueCount; i++) {
+        if (map->entries[i].frequency < 1 || map->entries[i].text[0] == '\0')
+            { valid_entries = false; break; }
+    }
+    assert_true(valid_entries, "KL freqmap good: all entries have frequency >= 1 and non-empty text");
+
+    /* Space is the most common delimiter and should appear many times */
+    bool space_found = false;
+    for (size_t i = 0; i < map->uniqueCount; i++) {
+        if (strcmp(map->entries[i].text, " ") == 0 && map->entries[i].frequency >= 5)
+            { space_found = true; break; }
+    }
+    assert_true(space_found, "KL freqmap good: space delimiter recurs >= 5 times");
+
+    /* The most-frequent entry must appear more than once (real repetition) */
+    assert_true(map->entries[0].frequency > 1,
+                "KL freqmap good: top entry appears more than once");
+
+    printf("PASS KL freqmap - good hyphenation (%zu unique / %zu total tokens)\n",
+           map->uniqueCount, map->totalTokens);
+
+    freeKLFreqMap(map);
+    freeKLTokenArray(arr);
+}
+
+/* Bad hyphenation: a text composed almost entirely of short words (<=2 chars)
+   that the algorithm cannot hyphenate, plus repeated identical words.
+   The frequency map should reflect high repetition with low uniqueCount
+   and all word tokens marked isHyphenated=false. */
+void test_kl_freqmap_bad_hyphenation(void) {
+    /* All words are <=3 chars or already minimal; none should hyphenate */
+    static const char* text =
+        "a big cat sat on a mat a big dog ran by a big cat sat up and ran "
+        "a dog bit a cat a cat bit a rat a rat bit a big dog by the leg";
+
+    KLTokenArray* arr = tokenizeKnuthLiang(text);
+    assert_true(arr != NULL, "KL freqmap bad: tokenize returned non-NULL");
+    if (!arr) return;
+
+    /* Confirm no hyphenation occurred */
+    bool any_hyphenated = false;
+    for (size_t i = 0; i < arr->count; i++)
+        if (arr->tokens[i].isHyphenated) { any_hyphenated = true; break; }
+    assert_true(!any_hyphenated,
+                "KL freqmap bad: no tokens should be hyphenated for short-word text");
+
+    KLFreqMap* map = collectKLFrequencies(arr);
+    assert_true(map != NULL, "KL freqmap bad: collectKLFrequencies returned non-NULL");
+    if (!map) { freeKLTokenArray(arr); return; }
+
+    /* totalTokens matches source */
+    assert_equal_int((int)map->totalTokens, (int)arr->count,
+                     "KL freqmap bad: totalTokens matches source count");
+
+    /* Highly repetitive text: uniqueCount should be much smaller than totalTokens */
+    assert_true(map->uniqueCount < map->totalTokens / 2,
+                "KL freqmap bad: highly repetitive text has uniqueCount < half of totalTokens");
+
+    /* Sorted descending */
+    bool sorted = true;
+    for (size_t i = 1; i < map->uniqueCount; i++) {
+        if (map->entries[i].frequency > map->entries[i - 1].frequency)
+            { sorted = false; break; }
+    }
+    assert_true(sorted, "KL freqmap bad: entries sorted descending by frequency");
+
+    /* "a" and " " should be the highest-frequency entries */
+    assert_true(map->entries[0].frequency >= 10,
+                "KL freqmap bad: top entry appears >= 10 times in repetitive text");
+
+    /* Every frequency >= 1, text non-empty */
+    bool valid_entries = true;
+    for (size_t i = 0; i < map->uniqueCount; i++) {
+        if (map->entries[i].frequency < 1 || map->entries[i].text[0] == '\0')
+            { valid_entries = false; break; }
+    }
+    assert_true(valid_entries, "KL freqmap bad: all entries valid");
+
+    printf("PASS KL freqmap - bad hyphenation (%zu unique / %zu total tokens, "
+           "top entry \"%s\" x%d)\n",
+           map->uniqueCount, map->totalTokens,
+           map->entries[0].text, map->entries[0].frequency);
+
+    freeKLFreqMap(map);
+    freeKLTokenArray(arr);
+}

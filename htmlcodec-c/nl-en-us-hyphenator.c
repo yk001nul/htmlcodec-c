@@ -1003,3 +1003,52 @@ KLTokenArray* tokenizeKnuthLiang(const char* input) {
 void freeKLTokenArray(KLTokenArray* arr) {
     free(arr);
 }
+
+/* ---- Frequency map ---- */
+
+KLFreqMap* collectKLFrequencies(const KLTokenArray* arr) {
+    if (!arr) return NULL;
+
+    KLFreqMap* map = (KLFreqMap*)calloc(1, sizeof(KLFreqMap));
+    if (!map) return NULL;
+
+    map->totalTokens = arr->count;
+
+    for (size_t i = 0; i < arr->count; i++) {
+        const char* text = arr->tokens[i].text;
+
+        /* Linear search for an existing entry with the same text */
+        bool found = false;
+        for (size_t j = 0; j < map->uniqueCount; j++) {
+            if (strcmp(map->entries[j].text, text) == 0) {
+                map->entries[j].frequency++;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found && map->uniqueCount < KL_MAX_TOKENS) {
+            KLStringFreq* e = &map->entries[map->uniqueCount++];
+            strncpy(e->text, text, KL_MAX_TOKEN_TEXT - 1);
+            e->text[KL_MAX_TOKEN_TEXT - 1] = '\0';
+            e->frequency = 1;
+        }
+    }
+
+    /* Insertion sort: descending by frequency */
+    for (size_t i = 1; i < map->uniqueCount; i++) {
+        KLStringFreq tmp = map->entries[i];
+        size_t j = i;
+        while (j > 0 && map->entries[j - 1].frequency < tmp.frequency) {
+            map->entries[j] = map->entries[j - 1];
+            j--;
+        }
+        map->entries[j] = tmp;
+    }
+
+    return map;
+}
+
+void freeKLFreqMap(KLFreqMap* map) {
+    free(map);
+}
