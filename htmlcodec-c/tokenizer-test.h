@@ -93,4 +93,8 @@ void test_nl_en_integration_professional_text();
 void test_zlib_compare_medium_text();
 void test_zlib_compare_long_text();
 
+// Knuth-Liang hyphenator tests
+void test_kl_hyphenator_best_case();
+void test_kl_hyphenator_worst_case();
+
 #endif // TOKENIZER_TEST_H

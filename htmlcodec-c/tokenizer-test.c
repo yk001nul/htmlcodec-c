@@ -2,6 +2,7 @@
 #include "nl-en-tokenizer.h"
 #include "nl-en-codec.h"
 #include "cl-javascript-en-tokenizer.h"
+#include "nl-en-us-hyphenator.h"
 #include <zlib.h>
 
 int testsPassed = 0;
@@ -798,4 +799,78 @@ void test_zlib_compare_long_text() {
     free(zlib_dest);
     freeNLTokenArray(tokens);
     printf("PASS zlib vs NL-EN compare - long professional text\n");
+}
+
+/* ---- Knuth-Liang Hyphenator Tests ---- */
+
+/* Best case: a common English word expected to hyphenate into multiple syllables.
+   "butterfly" -> "but-ter-fly" -> 3 tokens, all isHyphenated=true. */
+void test_kl_hyphenator_best_case(void) {
+    KLTokenArray* arr = tokenizeKnuthLiang("butterfly");
+    assert_true(arr != NULL, "KL best case: result not NULL");
+    if (!arr) return;
+
+    /* At least 2 sub-tokens from hyphenation */
+    assert_true((int)arr->count >= 2, "KL best case: butterfly should produce >= 2 tokens");
+
+    /* All tokens from a successfully hyphenated word are marked isHyphenated */
+    bool all_hyphenated = true;
+    for (size_t i = 0; i < arr->count; i++) {
+        if (!arr->tokens[i].isHyphenated) { all_hyphenated = false; break; }
+    }
+    assert_true(all_hyphenated, "KL best case: all tokens from hyphenated word should be marked");
+
+    /* Reconstructed text (joining tokens) matches original */
+    char reconstructed[64] = "";
+    for (size_t i = 0; i < arr->count; i++)
+        strcat(reconstructed, arr->tokens[i].text);
+    assert_equal_str(reconstructed, "butterfly", "KL best case: rejoined tokens match original");
+
+    freeKLTokenArray(arr);
+    printf("PASS KL hyphenator - best case (butterfly)\n");
+}
+
+/* Worst case: a short or unrecognisable word that yields no hyphenation,
+   and a non-alphanumeric delimiter string.
+   "zx" (<=2 chars, too short) -> 1 token, isHyphenated=false.
+   "!?," -> 1 delimiter token, isHyphenated=false, caseStyle=0. */
+void test_kl_hyphenator_worst_case(void) {
+    /* Short word - cannot be hyphenated (length <= 2) */
+    KLTokenArray* arr1 = tokenizeKnuthLiang("zx");
+    assert_true(arr1 != NULL, "KL worst case: short word result not NULL");
+    if (arr1) {
+        assert_equal_int((int)arr1->count, 1, "KL worst case: short word produces 1 token");
+        assert_true(!arr1->tokens[0].isHyphenated, "KL worst case: short word not hyphenated");
+        freeKLTokenArray(arr1);
+    }
+
+    /* Non-alphanumeric string - delimiter token, no hyphenation */
+    KLTokenArray* arr2 = tokenizeKnuthLiang("!?,");
+    assert_true(arr2 != NULL, "KL worst case: delimiter result not NULL");
+    if (arr2) {
+        assert_equal_int((int)arr2->count, 1, "KL worst case: delimiter string produces 1 token");
+        assert_true(!arr2->tokens[0].isHyphenated, "KL worst case: delimiter not hyphenated");
+        assert_equal_int(arr2->tokens[0].caseStyle, 0, "KL worst case: delimiter caseStyle=0");
+        freeKLTokenArray(arr2);
+    }
+
+    /* Mixed input: word + space + short word */
+    KLTokenArray* arr3 = tokenizeKnuthLiang("mother like cookies");
+    assert_true(arr3 != NULL, "KL worst case: mixed result not NULL");
+    if (arr3) {
+        /* Should have at least 5 tokens: word tokens + 2 spaces */
+        assert_true((int)arr3->count >= 5, "KL worst case: mixed input >= 5 tokens");
+        /* Space tokens should be non-hyphenated with caseStyle 0 */
+        bool spaces_ok = true;
+        for (size_t i = 0; i < arr3->count; i++) {
+            if (arr3->tokens[i].text[0] == ' ') {
+                if (arr3->tokens[i].isHyphenated || arr3->tokens[i].caseStyle != 0)
+                    spaces_ok = false;
+            }
+        }
+        assert_true(spaces_ok, "KL worst case: space tokens are delimiters with caseStyle=0");
+        freeKLTokenArray(arr3);
+    }
+
+    printf("PASS KL hyphenator - worst case\n");
 }
