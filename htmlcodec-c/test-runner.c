@@ -57,6 +57,18 @@ int main(void) {
     test_zlib_compare_medium_text();
     test_zlib_compare_long_text();
 
+    printf("\n--- KNUTH-LIANG HYPHENATOR TESTS ---\n");
+    test_kl_hyphenator_best_case();
+    test_kl_hyphenator_worst_case();
+    test_kl_hyphenator_professional_text();
+
+    printf("\n--- KNUTH-LIANG FREQUENCY MAP TESTS ---\n");
+    test_kl_freqmap_good_hyphenation();
+    test_kl_freqmap_bad_hyphenation();
+
+    printf("\n--- KNUTH-LIANG AFFIX STRIPPING TESTS ---\n");
+    test_kl_affix_strip();
+
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
 

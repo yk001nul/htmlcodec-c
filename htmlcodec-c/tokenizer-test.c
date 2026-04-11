@@ -2,6 +2,7 @@
 #include "nl-en-tokenizer.h"
 #include "nl-en-codec.h"
 #include "cl-javascript-en-tokenizer.h"
+#include "nl-en-us-hyphenator.h"
 #include <zlib.h>
 
 int testsPassed = 0;
@@ -432,6 +433,7 @@ void test_html_integrated_tokenizer_real_file() {
         html = loadFileContent("../../../test.html");
     }
     assert_true(html != NULL, "Real HTML file should be loadable");
+    if (!html) return; /* file not present in this environment — skip remaining assertions */
 
     HTMLTokenArray* result = parseHTML(html);
     assert_true(result != NULL, "Real HTML parse result should not be NULL");
@@ -798,4 +800,365 @@ void test_zlib_compare_long_text() {
     free(zlib_dest);
     freeNLTokenArray(tokens);
     printf("PASS zlib vs NL-EN compare - long professional text\n");
+}
+
+/* ---- Knuth-Liang Hyphenator Tests ---- */
+
+/* Best case: a common English word expected to hyphenate into multiple syllables.
+   "butterfly" -> "but-ter-fly" -> 3 tokens, all isHyphenated=true. */
+void test_kl_hyphenator_best_case(void) {
+    KLTokenArray* arr = tokenizeKnuthLiang("butterfly");
+    assert_true(arr != NULL, "KL best case: result not NULL");
+    if (!arr) return;
+
+    /* At least 2 sub-tokens from hyphenation */
+    assert_true((int)arr->count >= 2, "KL best case: butterfly should produce >= 2 tokens");
+
+    /* All tokens from a successfully hyphenated word are marked isHyphenated */
+    bool all_hyphenated = true;
+    for (size_t i = 0; i < arr->count; i++) {
+        if (!arr->tokens[i].isHyphenated) { all_hyphenated = false; break; }
+    }
+    assert_true(all_hyphenated, "KL best case: all tokens from hyphenated word should be marked");
+
+    /* Reconstructed text (joining tokens) matches original */
+    char reconstructed[64] = "";
+    for (size_t i = 0; i < arr->count; i++)
+        strcat(reconstructed, arr->tokens[i].text);
+    assert_equal_str(reconstructed, "butterfly", "KL best case: rejoined tokens match original");
+
+    freeKLTokenArray(arr);
+    printf("PASS KL hyphenator - best case (butterfly)\n");
+}
+
+/* Worst case: a short or unrecognisable word that yields no hyphenation,
+   and a non-alphanumeric delimiter string.
+   "zx" (<=2 chars, too short) -> 1 token, isHyphenated=false.
+   "!?," -> 1 delimiter token, isHyphenated=false, caseStyle=0. */
+void test_kl_hyphenator_worst_case(void) {
+    /* Short word - cannot be hyphenated (length <= 2) */
+    KLTokenArray* arr1 = tokenizeKnuthLiang("zx");
+    assert_true(arr1 != NULL, "KL worst case: short word result not NULL");
+    if (arr1) {
+        assert_equal_int((int)arr1->count, 1, "KL worst case: short word produces 1 token");
+        assert_true(!arr1->tokens[0].isHyphenated, "KL worst case: short word not hyphenated");
+        freeKLTokenArray(arr1);
+    }
+
+    /* Non-alphanumeric string - delimiter token, no hyphenation */
+    KLTokenArray* arr2 = tokenizeKnuthLiang("!?,");
+    assert_true(arr2 != NULL, "KL worst case: delimiter result not NULL");
+    if (arr2) {
+        assert_equal_int((int)arr2->count, 1, "KL worst case: delimiter string produces 1 token");
+        assert_true(!arr2->tokens[0].isHyphenated, "KL worst case: delimiter not hyphenated");
+        assert_equal_int(arr2->tokens[0].caseStyle, 0, "KL worst case: delimiter caseStyle=0");
+        freeKLTokenArray(arr2);
+    }
+
+    /* Mixed input: word + space + short word */
+    KLTokenArray* arr3 = tokenizeKnuthLiang("mother like cookies");
+    assert_true(arr3 != NULL, "KL worst case: mixed result not NULL");
+    if (arr3) {
+        /* Should have at least 5 tokens: word tokens + 2 spaces */
+        assert_true((int)arr3->count >= 5, "KL worst case: mixed input >= 5 tokens");
+        /* Space tokens should be non-hyphenated with caseStyle 0 */
+        bool spaces_ok = true;
+        for (size_t i = 0; i < arr3->count; i++) {
+            if (arr3->tokens[i].text[0] == ' ') {
+                if (arr3->tokens[i].isHyphenated || arr3->tokens[i].caseStyle != 0)
+                    spaces_ok = false;
+            }
+        }
+        assert_true(spaces_ok, "KL worst case: space tokens are delimiters with caseStyle=0");
+        freeKLTokenArray(arr3);
+    }
+
+    printf("PASS KL hyphenator - worst case\n");
+}
+
+/* Professional text test: tokenize a magazine-style English passage and verify
+   structural correctness of the hyphenation output across a realistic corpus. */
+void test_kl_hyphenator_professional_text(void) {
+    static const char* text =
+        "The rapid advancement of artificial intelligence has fundamentally transformed "
+        "the way organizations approach decision-making and problem-solving across virtually "
+        "every industry. Machine learning algorithms, particularly deep neural networks, "
+        "have demonstrated remarkable capabilities in pattern recognition, natural language "
+        "understanding, and generative tasks that were previously considered exclusive "
+        "to human intelligence.\n\n"
+        "Researchers and practitioners continue to investigate the theoretical foundations "
+        "underlying these models, seeking to understand why certain architectures generalize "
+        "effectively while others overfit or fail to converge during training. Regularization "
+        "techniques, attention mechanisms, and transfer learning have emerged as powerful "
+        "strategies for improving model performance without proportionally increasing "
+        "computational requirements.\n\n"
+        "The deployment of large-scale language models has introduced new considerations "
+        "around interpretability, fairness, and environmental sustainability. Organizations "
+        "must balance the competitive advantages offered by sophisticated AI systems against "
+        "the infrastructure costs, energy consumption, and potential societal implications "
+        "associated with widespread adoption. Governance frameworks and international "
+        "standards bodies are actively working to establish guidelines that promote "
+        "responsible innovation while preserving the benefits of technological progress.\n\n"
+        "Looking ahead, researchers anticipate continued improvements in multimodal "
+        "understanding, reasoning under uncertainty, and efficient inference on edge devices. "
+        "The convergence of hardware acceleration, novel training paradigms, and curated "
+        "high-quality datasets is expected to unlock capabilities that remain out of reach "
+        "with current approaches. As the field matures, interdisciplinary collaboration "
+        "between computer scientists, ethicists, domain experts, and policymakers will "
+        "become increasingly essential to navigating the complex landscape of modern "
+        "artificial intelligence research and deployment.";
+
+    KLTokenArray* arr = tokenizeKnuthLiang(text);
+    assert_true(arr != NULL, "KL professional: result not NULL");
+    if (!arr) return;
+
+    /* Should produce a substantial number of tokens from this length of text */
+    assert_true((int)arr->count > 300,
+                "KL professional: long text should produce > 300 tokens");
+    assert_true((int)arr->count <= KL_MAX_TOKENS,
+                "KL professional: token count within fixed array capacity");
+
+    int hyphenated_count = 0;
+    int word_count       = 0;
+    bool invariants_ok   = true;
+
+    for (size_t i = 0; i < arr->count; i++) {
+        KLToken* t = &arr->tokens[i];
+
+        /* Every token must have non-zero length */
+        if (t->length == 0) { invariants_ok = false; break; }
+
+        unsigned char fc = (unsigned char)t->text[0];
+        bool is_delim = !(fc >= 32 && fc < 128 && KL_ASCII_PATTERNS[fc - 32]);
+
+        if (is_delim) {
+            /* Delimiter tokens must never be marked as hyphenated and must have caseStyle 0 */
+            if (t->isHyphenated || t->caseStyle != 0) { invariants_ok = false; break; }
+        } else {
+            word_count++;
+            if (t->isHyphenated) hyphenated_count++;
+        }
+    }
+
+    assert_true(invariants_ok,
+                "KL professional: all tokens satisfy delimiter/caseStyle invariants");
+
+    /* A meaningful fraction of word tokens should be hyphenated syllables —
+       professional text contains many polysyllabic words. */
+    assert_true(word_count > 150,
+                "KL professional: text should yield > 150 word tokens");
+    assert_true(hyphenated_count > 80,
+                "KL professional: > 80 syllable tokens expected from polysyllabic vocabulary");
+
+    int total_count = (int)arr->count;
+    freeKLTokenArray(arr);
+    printf("PASS KL hyphenator - professional text (%d tokens, %d hyphenated syllables)\n",
+           total_count, hyphenated_count);
+}
+
+/* ---- Frequency map tests ---- */
+
+/* Good hyphenation: a medium-length passage rich in polysyllabic words.
+   After tokenization the frequency map should show many distinct syllables,
+   common short syllables recurring multiple times, and entries sorted
+   descending by frequency. */
+void test_kl_freqmap_good_hyphenation(void) {
+    static const char* text =
+        "Scientists investigating the underlying mechanisms of biological evolution "
+        "have discovered remarkable patterns of adaptation and diversification across "
+        "generations. The development of genetic sequencing technologies has accelerated "
+        "our understanding of hereditary information, revealing how populations accumulate "
+        "mutations and respond to environmental pressures over extended periods. "
+        "Computational models of evolutionary dynamics help researchers anticipate "
+        "trajectories of change and identify the selective pressures responsible for "
+        "observable morphological and behavioral transformations.";
+
+    KLTokenArray* arr = tokenizeKnuthLiang(text);
+    assert_true(arr != NULL, "KL freqmap good: tokenize returned non-NULL");
+    if (!arr) return;
+
+    KLFreqMap* map = collectKLFrequencies(arr);
+    assert_true(map != NULL, "KL freqmap good: collectKLFrequencies returned non-NULL");
+    if (!map) { freeKLTokenArray(arr); return; }
+
+    /* totalTokens must equal the source array count */
+    assert_equal_int((int)map->totalTokens, (int)arr->count,
+                     "KL freqmap good: totalTokens matches source count");
+
+    /* uniqueCount must be <= totalTokens and > 0 */
+    assert_true((int)map->uniqueCount > 0,
+                "KL freqmap good: at least one unique string");
+    assert_true(map->uniqueCount <= map->totalTokens,
+                "KL freqmap good: uniqueCount <= totalTokens");
+
+    /* Polysyllabic text has repetition — expect meaningful deduplication */
+    assert_true(map->uniqueCount < map->totalTokens,
+                "KL freqmap good: repeated strings produce fewer unique entries than tokens");
+
+    /* Entries must be sorted descending by frequency */
+    bool sorted = true;
+    for (size_t i = 1; i < map->uniqueCount; i++) {
+        if (map->entries[i].frequency > map->entries[i - 1].frequency)
+            { sorted = false; break; }
+    }
+    assert_true(sorted, "KL freqmap good: entries sorted descending by frequency");
+
+    /* Every frequency must be >= 1 and every text non-empty */
+    bool valid_entries = true;
+    for (size_t i = 0; i < map->uniqueCount; i++) {
+        if (map->entries[i].frequency < 1 || map->entries[i].text[0] == '\0')
+            { valid_entries = false; break; }
+    }
+    assert_true(valid_entries, "KL freqmap good: all entries have frequency >= 1 and non-empty text");
+
+    /* Space is the most common delimiter and should appear many times */
+    bool space_found = false;
+    for (size_t i = 0; i < map->uniqueCount; i++) {
+        if (strcmp(map->entries[i].text, " ") == 0 && map->entries[i].frequency >= 5)
+            { space_found = true; break; }
+    }
+    assert_true(space_found, "KL freqmap good: space delimiter recurs >= 5 times");
+
+    /* The most-frequent entry must appear more than once (real repetition) */
+    assert_true(map->entries[0].frequency > 1,
+                "KL freqmap good: top entry appears more than once");
+
+    printf("PASS KL freqmap - good hyphenation (%zu unique / %zu total tokens)\n",
+           map->uniqueCount, map->totalTokens);
+
+    freeKLFreqMap(map);
+    freeKLTokenArray(arr);
+}
+
+/* Bad hyphenation: a text composed almost entirely of short words (<=2 chars)
+   that the algorithm cannot hyphenate, plus repeated identical words.
+   The frequency map should reflect high repetition with low uniqueCount
+   and all word tokens marked isHyphenated=false. */
+void test_kl_freqmap_bad_hyphenation(void) {
+    /* All words are <=3 chars or already minimal; none should hyphenate */
+    static const char* text =
+        "a big cat sat on a mat a big dog ran by a big cat sat up and ran "
+        "a dog bit a cat a cat bit a rat a rat bit a big dog by the leg";
+
+    KLTokenArray* arr = tokenizeKnuthLiang(text);
+    assert_true(arr != NULL, "KL freqmap bad: tokenize returned non-NULL");
+    if (!arr) return;
+
+    /* Confirm no hyphenation occurred */
+    bool any_hyphenated = false;
+    for (size_t i = 0; i < arr->count; i++)
+        if (arr->tokens[i].isHyphenated) { any_hyphenated = true; break; }
+    assert_true(!any_hyphenated,
+                "KL freqmap bad: no tokens should be hyphenated for short-word text");
+
+    KLFreqMap* map = collectKLFrequencies(arr);
+    assert_true(map != NULL, "KL freqmap bad: collectKLFrequencies returned non-NULL");
+    if (!map) { freeKLTokenArray(arr); return; }
+
+    /* totalTokens matches source */
+    assert_equal_int((int)map->totalTokens, (int)arr->count,
+                     "KL freqmap bad: totalTokens matches source count");
+
+    /* Highly repetitive text: uniqueCount should be much smaller than totalTokens */
+    assert_true(map->uniqueCount < map->totalTokens / 2,
+                "KL freqmap bad: highly repetitive text has uniqueCount < half of totalTokens");
+
+    /* Sorted descending */
+    bool sorted = true;
+    for (size_t i = 1; i < map->uniqueCount; i++) {
+        if (map->entries[i].frequency > map->entries[i - 1].frequency)
+            { sorted = false; break; }
+    }
+    assert_true(sorted, "KL freqmap bad: entries sorted descending by frequency");
+
+    /* "a" and " " should be the highest-frequency entries */
+    assert_true(map->entries[0].frequency >= 10,
+                "KL freqmap bad: top entry appears >= 10 times in repetitive text");
+
+    /* Every frequency >= 1, text non-empty */
+    bool valid_entries = true;
+    for (size_t i = 0; i < map->uniqueCount; i++) {
+        if (map->entries[i].frequency < 1 || map->entries[i].text[0] == '\0')
+            { valid_entries = false; break; }
+    }
+    assert_true(valid_entries, "KL freqmap bad: all entries valid");
+
+    printf("PASS KL freqmap - bad hyphenation (%zu unique / %zu total tokens, "
+           "top entry \"%s\" x%d)\n",
+           map->uniqueCount, map->totalTokens,
+           map->entries[0].text, map->entries[0].frequency);
+
+    freeKLFreqMap(map);
+    freeKLTokenArray(arr);
+}
+
+/* ---- Knuth-Liang Affix Stripping Tests ---- */
+
+/* Verify kl_strip_affixes and that tokenizeKnuthLiang uses it correctly.
+   "sundering": "ing" suffix stripped, no matching prefix, KL splits "sunder".
+   "preprocessing": "ing" suffix stripped, "pre" prefix stripped, KL splits "process". */
+void test_kl_affix_strip(void) {
+    KLAffixResult res;
+
+    /* --- kl_strip_affixes: sundering --- */
+    kl_strip_affixes("sundering", 9, &res);
+    assert_equal_str(res.suffix, "ing",    "affix strip: sundering suffix='ing'");
+    assert_equal_str(res.stem,   "sunder", "affix strip: sundering stem='sunder'");
+    assert_equal_int(res.prefix_len, 0,    "affix strip: sundering no prefix");
+
+    /* --- kl_strip_affixes: preprocessing --- */
+    kl_strip_affixes("preprocessing", 13, &res);
+    assert_equal_str(res.prefix, "pre",     "affix strip: preprocessing prefix='pre'");
+    assert_equal_str(res.stem,   "process", "affix strip: preprocessing stem='process'");
+    assert_equal_str(res.suffix, "ing",     "affix strip: preprocessing suffix='ing'");
+
+    /* --- kl_strip_affixes: word with no 3+-char suffix (butterfly) --- */
+    kl_strip_affixes("butterfly", 9, &res);
+    assert_equal_int(res.suffix_len, 0,        "affix strip: butterfly no suffix");
+    assert_equal_str(res.stem, "butterfly",    "affix strip: butterfly stem=whole word");
+
+    /* --- tokenizeKnuthLiang("sundering") => "sun","der","ing" --- */
+    KLTokenArray* arr1 = tokenizeKnuthLiang("sundering");
+    assert_true(arr1 != NULL, "affix tokenize: sundering not NULL");
+    if (arr1) {
+        assert_equal_int((int)arr1->count, 3, "affix tokenize: sundering 3 tokens");
+        if ((int)arr1->count == 3) {
+            assert_equal_str(arr1->tokens[0].text, "sun", "affix tokenize: sundering[0]='sun'");
+            assert_equal_str(arr1->tokens[1].text, "der", "affix tokenize: sundering[1]='der'");
+            assert_equal_str(arr1->tokens[2].text, "ing", "affix tokenize: sundering[2]='ing'");
+            assert_true(arr1->tokens[0].isHyphenated, "affix tokenize: sundering[0] isHyphenated");
+            assert_true(arr1->tokens[1].isHyphenated, "affix tokenize: sundering[1] isHyphenated");
+            assert_true(arr1->tokens[2].isHyphenated, "affix tokenize: sundering[2] isHyphenated");
+            assert_equal_int(arr1->tokens[2].caseStyle, 0, "affix tokenize: suffix caseStyle=0");
+        }
+        freeKLTokenArray(arr1);
+    }
+
+    /* --- tokenizeKnuthLiang("preprocessing") => "pre","<stem...>","ing" --- */
+    KLTokenArray* arr2 = tokenizeKnuthLiang("preprocessing");
+    assert_true(arr2 != NULL, "affix tokenize: preprocessing not NULL");
+    if (arr2) {
+        assert_true((int)arr2->count >= 3, "affix tokenize: preprocessing >= 3 tokens");
+        if ((int)arr2->count >= 1) {
+            assert_equal_str(arr2->tokens[0].text, "pre",
+                             "affix tokenize: preprocessing first token='pre'");
+            assert_true(arr2->tokens[0].isHyphenated,
+                        "affix tokenize: preprocessing prefix isHyphenated");
+            assert_equal_int(arr2->tokens[0].caseStyle, 0,
+                             "affix tokenize: preprocessing prefix caseStyle=0");
+        }
+        if ((int)arr2->count >= 2) {
+            /* Last token must be the suffix "ing" */
+            int last = (int)arr2->count - 1;
+            assert_equal_str(arr2->tokens[last].text, "ing",
+                             "affix tokenize: preprocessing last token='ing'");
+            assert_true(arr2->tokens[last].isHyphenated,
+                        "affix tokenize: preprocessing suffix isHyphenated");
+            assert_equal_int(arr2->tokens[last].caseStyle, 0,
+                             "affix tokenize: preprocessing suffix caseStyle=0");
+        }
+        freeKLTokenArray(arr2);
+    }
+
+    printf("PASS KL affix stripping\n");
 }
