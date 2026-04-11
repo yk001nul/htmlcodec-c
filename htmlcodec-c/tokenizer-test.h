@@ -102,4 +102,7 @@ void test_kl_hyphenator_professional_text();
 void test_kl_freqmap_good_hyphenation();
 void test_kl_freqmap_bad_hyphenation();
 
+// Knuth-Liang affix stripping tests
+void test_kl_affix_strip();
+
 #endif // TOKENIZER_TEST_H

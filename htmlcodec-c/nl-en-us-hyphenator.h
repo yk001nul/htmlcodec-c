@@ -50,6 +50,29 @@ typedef struct {
 KLFreqMap* collectKLFrequencies(const KLTokenArray* arr);
 void freeKLFreqMap(KLFreqMap* map);
 
+// Top 128 most commonly used English prefixes (for affix stripping).
+extern const char* KL_EN_PREFIXES[128];
+
+// Top 128 most commonly used English suffixes (for affix stripping).
+extern const char* KL_EN_SUFFIXES[128];
+
+// Result of affix stripping applied to a single lowercase word.
+// prefix/suffix are empty strings ("") if not found; stem is always populated.
+typedef struct {
+    char prefix[KL_MAX_TOKEN_TEXT]; // stripped prefix; empty if none
+    int  prefix_len;                // 0 if no prefix was stripped
+    char stem[KL_MAX_TOKEN_TEXT];   // remaining stem after stripping
+    int  stem_len;                  // always >= 1
+    char suffix[KL_MAX_TOKEN_TEXT]; // stripped suffix; empty if none
+    int  suffix_len;                // 0 if no suffix was stripped
+} KLAffixResult;
+
+// Strip affixes from a lowercase word using longest-match.
+// Strips suffix first (once, minimum length 3); if successful, attempts
+// to strip prefix from remaining stem (minimum remaining stem: 3 chars).
+// Always populates stem; populates prefix/suffix only when a match is found.
+void kl_strip_affixes(const char* lower_word, int word_len, KLAffixResult* out);
+
 // Trie node for the Knuth-Liang hyphenation algorithm.
 // Children indexed by: 'a'-'z' -> 0-25, '.' -> 26.
 #define KL_TRIE_ALPHA 27

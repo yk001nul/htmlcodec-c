@@ -32,6 +32,131 @@ const int KL_ASCII_PATTERNS[96] = {
     /* 124 | */ 0, /* 125 } */ 0, /* 126 ~ */ 0, /* 127 DEL */ 0,
 };
 
+/* ---- English affix tables ---- */
+
+const char* KL_EN_PREFIXES[128] = {
+    /* 1-10 */    "re",      "un",      "in",      "dis",     "en",
+                  "im",      "over",    "mis",     "pre",     "out",
+    /* 11-20 */   "de",      "non",     "be",      "up",      "fore",
+                  "pro",     "sub",     "anti",    "inter",   "trans",
+    /* 21-30 */   "super",   "semi",    "mid",     "under",   "auto",
+                  "bi",      "co",      "counter", "ex",      "extra",
+    /* 31-40 */   "hyper",   "macro",   "mega",    "micro",   "mini",
+                  "mono",    "multi",   "neo",     "para",    "per",
+    /* 41-50 */   "poly",    "post",    "pseudo",  "quasi",   "retro",
+                  "self",    "supra",   "tri",     "ultra",   "uni",
+    /* 51-60 */   "with",    "after",   "back",    "cross",   "down",
+                  "off",     "step",    "well",    "geo",     "hypo",
+    /* 61-70 */   "photo",   "proto",   "psycho",  "stereo",  "tele",
+                  "thermo",  "video",   "ab",      "abs",     "ad",
+    /* 71-80 */   "af",      "ag",      "al",      "an",      "ap",
+                  "ar",      "as",      "at",      "com",     "con",
+    /* 81-90 */   "col",     "cor",     "dys",     "ec",      "ef",
+                  "em",      "epi",     "eu",      "hemi",    "hetero",
+    /* 91-100 */  "homo",    "infra",   "intra",   "iso",     "meta",
+                  "omni",    "ortho",   "pan",     "peri",    "syn",
+    /* 101-110 */ "sym",     "arch",    "amphi",   "ante",    "apo",
+                  "bene",    "cata",    "circum",  "contra",  "cyber",
+    /* 111-120 */ "demo",    "dia",     "electro", "ethno",   "hydro",
+                  "nano",    "neuro",   "paleo",   "penta",   "quadri",
+    /* 121-128 */ "radio",   "techno",  "acro",    "aero",    "agri",
+                  "astro",   "endo",    "exo"
+};
+
+const char* KL_EN_SUFFIXES[128] = {
+    /* 1-8 */     "ization", "ication", "ification", "isation",
+                  "ation",   "ition",   "ness",      "ment",
+    /* 9-16 */    "ical",    "ible",    "able",      "ious",
+                  "ial",     "ism",     "ist",       "ize",
+    /* 17-24 */   "ise",     "ify",     "ity",       "ary",
+                  "ory",     "ery",     "ance",      "ence",
+    /* 25-32 */   "ward",    "wise",    "ship",      "hood",
+                  "less",    "ful",     "ive",       "ous",
+    /* 33-40 */   "ing",     "ish",     "like",      "work",
+                  "side",    "time",    "where",     "ever",
+    /* 41-48 */   "self",    "dom",     "ion",       "ant",
+                  "ent",     "ate",     "age",       "ure",
+    /* 49-56 */   "ite",     "sion",    "tion",      "ian",
+                  "ern",     "er",      "est",       "ly",
+    /* 57-64 */   "al",      "ic",      "or",        "ed",
+                  "ty",      "cy",      "ry",        "fy",
+    /* 65-72 */   "gy",      "ny",      "py",        "ay",
+                  "ey",      "oy",      "an",        "in",
+    /* 73-80 */   "on",      "ue",      "ane",       "ene",
+                  "ine",     "one",     "une",       "ase",
+    /* 81-88 */   "ese",     "ose",     "use",       "ect",
+                  "ade",     "ide",     "ode",       "ude",
+    /* 89-96 */   "ire",     "ore",     "ique",      "ile",
+                  "ule",     "ple",     "ble",       "tle",
+    /* 97-104 */  "oid",     "form",    "logy",      "ology",
+                  "meter",   "scope",   "path",      "cide",
+    /* 105-112 */ "vore",    "fied",    "ings",      "ists",
+                  "isms",    "ized",    "ying",      "ied",
+    /* 113-120 */ "iers",    "ers",     "ors",       "als",
+                  "ics",     "ies",     "nce",       "nse",
+    /* 121-128 */ "nge",     "ths",     "ves",       "zes",
+                  "ses",     "ped",     "graph",     "ling"
+};
+
+/* Strip English affixes from a lowercase word using longest-match.
+   Suffix is attempted first (min length 3, min stem after strip 3).
+   Prefix is attempted on the remaining stem only if a suffix was found
+   (min remaining stem after both strips: 3 chars).
+   Always fills out->stem; fills prefix/suffix only when matched. */
+void kl_strip_affixes(const char* lower_word, int word_len, KLAffixResult* out) {
+    memset(out, 0, sizeof(*out));
+
+    /* Default: entire word is the stem, no affixes */
+    int copy = word_len < KL_MAX_TOKEN_TEXT - 1 ? word_len : KL_MAX_TOKEN_TEXT - 1;
+    memcpy(out->stem, lower_word, (size_t)copy);
+    out->stem[copy] = '\0';
+    out->stem_len   = copy;
+
+    /* --- Step 1: find the longest matching suffix (min len 3) --- */
+    int best_suf = 0;
+    for (int i = 0; i < 128; i++) {
+        int slen = (int)strlen(KL_EN_SUFFIXES[i]);
+        if (slen < 3)                  continue; /* minimum suffix length */
+        if (slen <= best_suf)          continue; /* not longer than current best */
+        if (word_len - slen < 3)       continue; /* stem after strip must be >= 3 */
+        if (strncmp(lower_word + word_len - slen,
+                    KL_EN_SUFFIXES[i], (size_t)slen) == 0)
+            best_suf = slen;
+    }
+    if (best_suf == 0) return; /* no suffix found — keep defaults */
+
+    /* Record suffix */
+    int sc = best_suf < KL_MAX_TOKEN_TEXT - 1 ? best_suf : KL_MAX_TOKEN_TEXT - 1;
+    memcpy(out->suffix, lower_word + word_len - best_suf, (size_t)sc);
+    out->suffix[sc] = '\0';
+    out->suffix_len = sc;
+
+    int stem_len = word_len - best_suf; /* length of stem after suffix strip */
+
+    /* --- Step 2: find the longest matching prefix on the remaining stem --- */
+    int best_pre = 0;
+    for (int i = 0; i < 128; i++) {
+        int plen = (int)strlen(KL_EN_PREFIXES[i]);
+        if (plen <= best_pre)          continue;
+        if (stem_len - plen < 3)       continue; /* remaining core must be >= 3 */
+        if (strncmp(lower_word, KL_EN_PREFIXES[i], (size_t)plen) == 0)
+            best_pre = plen;
+    }
+    if (best_pre > 0) {
+        int pc = best_pre < KL_MAX_TOKEN_TEXT - 1 ? best_pre : KL_MAX_TOKEN_TEXT - 1;
+        memcpy(out->prefix, lower_word, (size_t)pc);
+        out->prefix[pc] = '\0';
+        out->prefix_len = pc;
+        stem_len -= best_pre;
+    }
+
+    /* Update stem */
+    int sc2 = stem_len < KL_MAX_TOKEN_TEXT - 1 ? stem_len : KL_MAX_TOKEN_TEXT - 1;
+    memcpy(out->stem, lower_word + best_pre, (size_t)sc2);
+    out->stem[sc2] = '\0';
+    out->stem_len  = sc2;
+}
+
 /* Patterns from ushyphmax.tex embedded for reference (avoids file I/O as fallback). */
 const char* KL_US_HYPHEN_PATTERNS[KL_US_HYPHEN_PATTERN_COUNT] = {
     ".ach4", ".ad4der", ".af1t", ".al3t", ".am5at", ".an5c", ".ang4", ".ani5m",
@@ -968,29 +1093,78 @@ KLTokenArray* tokenizeKnuthLiang(const char* input) {
                 lower[k] = (char)tolower((unsigned char)seg[k]);
             lower[copy_len] = '\0';
 
-            char lower_hyph[1024];
-            int hyphens = kl_hyphenate_lower(trie, lower, lower_hyph, (int)sizeof(lower_hyph));
+            /* Try affix stripping first */
+            KLAffixResult affix;
+            kl_strip_affixes(lower, copy_len, &affix);
 
-            if (hyphens == 0) {
-                int cs = kl_case_style(seg, copy_len);
-                kl_push_token(result, seg, copy_len, cs, false);
-                hyphen_fail++;
-            } else {
-                /* Copy hyphens back to original-cased buffer */
-                char orig_hyph[1024];
-                kl_copy_hyphens(lower_hyph, seg, orig_hyph, (int)sizeof(orig_hyph));
+            if (affix.suffix_len > 0) {
+                /* Affix-stripped path ---------------------------------------- */
 
-                /* Split by '-' into sub-tokens, each marked isHyphenated=true */
-                char* p   = orig_hyph;
-                char* end = p + (int)strlen(orig_hyph);
-                while (p < end && result->count < KL_MAX_TOKENS) {
-                    char* sep   = strchr(p, '-');
-                    int sub_len = sep ? (int)(sep - p) : (int)(end - p);
-                    int cs      = kl_case_style(p, sub_len);
-                    kl_push_token(result, p, sub_len, cs, true);
-                    p += sub_len + (sep ? 1 : 0);
+                /* Push prefix token (isHyphenated=true, caseStyle=0) */
+                if (affix.prefix_len > 0)
+                    kl_push_token(result, affix.prefix, affix.prefix_len, 0, true);
+
+                /* Extract original-cased stem from seg */
+                char orig_stem[512];
+                int os_copy = affix.stem_len < (int)sizeof(orig_stem) - 1
+                              ? affix.stem_len : (int)sizeof(orig_stem) - 1;
+                memcpy(orig_stem, seg + affix.prefix_len, (size_t)os_copy);
+                orig_stem[os_copy] = '\0';
+
+                /* Hyphenate the stem */
+                char stem_hyph[1024];
+                int hyphens = kl_hyphenate_lower(trie, affix.stem, stem_hyph,
+                                                  (int)sizeof(stem_hyph));
+
+                if (hyphens == 0) {
+                    int cs = kl_case_style(orig_stem, os_copy);
+                    kl_push_token(result, orig_stem, os_copy, cs, true);
+                } else {
+                    char orig_stem_hyph[1024];
+                    kl_copy_hyphens(stem_hyph, orig_stem, orig_stem_hyph,
+                                    (int)sizeof(orig_stem_hyph));
+                    char* p   = orig_stem_hyph;
+                    char* end = p + (int)strlen(orig_stem_hyph);
+                    while (p < end && result->count < KL_MAX_TOKENS) {
+                        char* sep   = strchr(p, '-');
+                        int sub_len = sep ? (int)(sep - p) : (int)(end - p);
+                        int cs      = kl_case_style(p, sub_len);
+                        kl_push_token(result, p, sub_len, cs, true);
+                        p += sub_len + (sep ? 1 : 0);
+                    }
                 }
+
+                /* Push suffix token (isHyphenated=true, caseStyle=0) */
+                kl_push_token(result, affix.suffix, affix.suffix_len, 0, true);
                 hyphen_success++;
+
+            } else {
+                /* Regular KL path -------------------------------------------- */
+                char lower_hyph[1024];
+                int hyphens = kl_hyphenate_lower(trie, lower, lower_hyph,
+                                                  (int)sizeof(lower_hyph));
+
+                if (hyphens == 0) {
+                    int cs = kl_case_style(seg, copy_len);
+                    kl_push_token(result, seg, copy_len, cs, false);
+                    hyphen_fail++;
+                } else {
+                    /* Copy hyphens back to original-cased buffer */
+                    char orig_hyph[1024];
+                    kl_copy_hyphens(lower_hyph, seg, orig_hyph, (int)sizeof(orig_hyph));
+
+                    /* Split by '-' into sub-tokens, each marked isHyphenated=true */
+                    char* p   = orig_hyph;
+                    char* end = p + (int)strlen(orig_hyph);
+                    while (p < end && result->count < KL_MAX_TOKENS) {
+                        char* sep   = strchr(p, '-');
+                        int sub_len = sep ? (int)(sep - p) : (int)(end - p);
+                        int cs      = kl_case_style(p, sub_len);
+                        kl_push_token(result, p, sub_len, cs, true);
+                        p += sub_len + (sep ? 1 : 0);
+                    }
+                    hyphen_success++;
+                }
             }
         }
     }

@@ -66,6 +66,9 @@ int main(void) {
     test_kl_freqmap_good_hyphenation();
     test_kl_freqmap_bad_hyphenation();
 
+    printf("\n--- KNUTH-LIANG AFFIX STRIPPING TESTS ---\n");
+    test_kl_affix_strip();
+
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
 

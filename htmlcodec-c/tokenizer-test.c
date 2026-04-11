@@ -433,6 +433,7 @@ void test_html_integrated_tokenizer_real_file() {
         html = loadFileContent("../../../test.html");
     }
     assert_true(html != NULL, "Real HTML file should be loadable");
+    if (!html) return; /* file not present in this environment — skip remaining assertions */
 
     HTMLTokenArray* result = parseHTML(html);
     assert_true(result != NULL, "Real HTML parse result should not be NULL");
@@ -1089,4 +1090,75 @@ void test_kl_freqmap_bad_hyphenation(void) {
 
     freeKLFreqMap(map);
     freeKLTokenArray(arr);
+}
+
+/* ---- Knuth-Liang Affix Stripping Tests ---- */
+
+/* Verify kl_strip_affixes and that tokenizeKnuthLiang uses it correctly.
+   "sundering": "ing" suffix stripped, no matching prefix, KL splits "sunder".
+   "preprocessing": "ing" suffix stripped, "pre" prefix stripped, KL splits "process". */
+void test_kl_affix_strip(void) {
+    KLAffixResult res;
+
+    /* --- kl_strip_affixes: sundering --- */
+    kl_strip_affixes("sundering", 9, &res);
+    assert_equal_str(res.suffix, "ing",    "affix strip: sundering suffix='ing'");
+    assert_equal_str(res.stem,   "sunder", "affix strip: sundering stem='sunder'");
+    assert_equal_int(res.prefix_len, 0,    "affix strip: sundering no prefix");
+
+    /* --- kl_strip_affixes: preprocessing --- */
+    kl_strip_affixes("preprocessing", 13, &res);
+    assert_equal_str(res.prefix, "pre",     "affix strip: preprocessing prefix='pre'");
+    assert_equal_str(res.stem,   "process", "affix strip: preprocessing stem='process'");
+    assert_equal_str(res.suffix, "ing",     "affix strip: preprocessing suffix='ing'");
+
+    /* --- kl_strip_affixes: word with no 3+-char suffix (butterfly) --- */
+    kl_strip_affixes("butterfly", 9, &res);
+    assert_equal_int(res.suffix_len, 0,        "affix strip: butterfly no suffix");
+    assert_equal_str(res.stem, "butterfly",    "affix strip: butterfly stem=whole word");
+
+    /* --- tokenizeKnuthLiang("sundering") => "sun","der","ing" --- */
+    KLTokenArray* arr1 = tokenizeKnuthLiang("sundering");
+    assert_true(arr1 != NULL, "affix tokenize: sundering not NULL");
+    if (arr1) {
+        assert_equal_int((int)arr1->count, 3, "affix tokenize: sundering 3 tokens");
+        if ((int)arr1->count == 3) {
+            assert_equal_str(arr1->tokens[0].text, "sun", "affix tokenize: sundering[0]='sun'");
+            assert_equal_str(arr1->tokens[1].text, "der", "affix tokenize: sundering[1]='der'");
+            assert_equal_str(arr1->tokens[2].text, "ing", "affix tokenize: sundering[2]='ing'");
+            assert_true(arr1->tokens[0].isHyphenated, "affix tokenize: sundering[0] isHyphenated");
+            assert_true(arr1->tokens[1].isHyphenated, "affix tokenize: sundering[1] isHyphenated");
+            assert_true(arr1->tokens[2].isHyphenated, "affix tokenize: sundering[2] isHyphenated");
+            assert_equal_int(arr1->tokens[2].caseStyle, 0, "affix tokenize: suffix caseStyle=0");
+        }
+        freeKLTokenArray(arr1);
+    }
+
+    /* --- tokenizeKnuthLiang("preprocessing") => "pre","<stem...>","ing" --- */
+    KLTokenArray* arr2 = tokenizeKnuthLiang("preprocessing");
+    assert_true(arr2 != NULL, "affix tokenize: preprocessing not NULL");
+    if (arr2) {
+        assert_true((int)arr2->count >= 3, "affix tokenize: preprocessing >= 3 tokens");
+        if ((int)arr2->count >= 1) {
+            assert_equal_str(arr2->tokens[0].text, "pre",
+                             "affix tokenize: preprocessing first token='pre'");
+            assert_true(arr2->tokens[0].isHyphenated,
+                        "affix tokenize: preprocessing prefix isHyphenated");
+            assert_equal_int(arr2->tokens[0].caseStyle, 0,
+                             "affix tokenize: preprocessing prefix caseStyle=0");
+        }
+        if ((int)arr2->count >= 2) {
+            /* Last token must be the suffix "ing" */
+            int last = (int)arr2->count - 1;
+            assert_equal_str(arr2->tokens[last].text, "ing",
+                             "affix tokenize: preprocessing last token='ing'");
+            assert_true(arr2->tokens[last].isHyphenated,
+                        "affix tokenize: preprocessing suffix isHyphenated");
+            assert_equal_int(arr2->tokens[last].caseStyle, 0,
+                             "affix tokenize: preprocessing suffix caseStyle=0");
+        }
+        freeKLTokenArray(arr2);
+    }
+
+    printf("PASS KL affix stripping\n");
 }
