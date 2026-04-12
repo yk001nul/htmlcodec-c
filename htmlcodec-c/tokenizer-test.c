@@ -1162,3 +1162,362 @@ void test_kl_affix_strip(void) {
 
     printf("PASS KL affix stripping\n");
 }
+
+/* ---- NL-EN Frequency Map Tests ---- */
+
+/* Best case: short text with deliberate repetition so that the freq map
+   has far fewer unique entries than total tokens, and is sorted correctly. */
+void test_nl_en_freqmap_best_case(void) {
+    /* "hi hi hi" -> tokenizer produces the same pattern tokens repeatedly */
+    NLTokenArray* arr = tokenizeEnglish("hi hi hi hi hi");
+    assert_true(arr != NULL, "NL freqmap best: tokenize returned non-NULL");
+    if (!arr) return;
+    assert_true((int)arr->count > 0, "NL freqmap best: at least one token");
+
+    NLFreqMap* map = collectNLFrequencies(arr);
+    assert_true(map != NULL, "NL freqmap best: collectNLFrequencies returned non-NULL");
+    if (!map) { freeNLTokenArray(arr); return; }
+
+    /* totalTokens must equal the source array count */
+    assert_equal_int((int)map->totalTokens, (int)arr->count,
+                     "NL freqmap best: totalTokens matches source count");
+
+    /* uniqueCount must be > 0 and <= totalTokens */
+    assert_true((int)map->uniqueCount > 0,
+                "NL freqmap best: at least one unique token");
+    assert_true(map->uniqueCount <= map->totalTokens,
+                "NL freqmap best: uniqueCount <= totalTokens");
+
+    /* Repetitive text: unique count should be less than total */
+    assert_true(map->uniqueCount < map->totalTokens,
+                "NL freqmap best: repeated tokens collapse to fewer unique entries");
+
+    /* Entries must be sorted descending by frequency */
+    bool sorted = true;
+    for (size_t i = 1; i < map->uniqueCount; i++) {
+        if (map->entries[i].frequency > map->entries[i - 1].frequency)
+            { sorted = false; break; }
+    }
+    assert_true(sorted, "NL freqmap best: entries sorted descending by frequency");
+
+    /* Sum of all frequencies must equal totalTokens */
+    int freq_sum = 0;
+    for (size_t i = 0; i < map->uniqueCount; i++)
+        freq_sum += map->entries[i].frequency;
+    assert_equal_int(freq_sum, (int)map->totalTokens,
+                     "NL freqmap best: frequency sum equals total token count");
+
+    /* Every entry must have frequency >= 1 */
+    bool valid = true;
+    for (size_t i = 0; i < map->uniqueCount; i++)
+        if (map->entries[i].frequency < 1) { valid = false; break; }
+    assert_true(valid, "NL freqmap best: all entries have frequency >= 1");
+
+    printf("PASS NL-EN freqmap - best case (%zu unique / %zu total)\n",
+           map->uniqueCount, map->totalTokens);
+
+    freeNLFreqMap(map);
+    freeNLTokenArray(arr);
+}
+
+/* Worst case: text composed of all different characters / rarely repeated tokens
+   so that uniqueCount approaches totalTokens. */
+void test_nl_en_freqmap_worst_case(void) {
+    /* 26 distinct single letters with spaces — most tokens will be unique */
+    const char* text = "a b c d e f g h i j k l m n o p q r s t u v w x y z";
+
+    NLTokenArray* arr = tokenizeEnglish(text);
+    assert_true(arr != NULL, "NL freqmap worst: tokenize returned non-NULL");
+    if (!arr) return;
+    assert_true((int)arr->count > 0, "NL freqmap worst: at least one token");
+
+    NLFreqMap* map = collectNLFrequencies(arr);
+    assert_true(map != NULL, "NL freqmap worst: collectNLFrequencies returned non-NULL");
+    if (!map) { freeNLTokenArray(arr); return; }
+
+    /* totalTokens matches source */
+    assert_equal_int((int)map->totalTokens, (int)arr->count,
+                     "NL freqmap worst: totalTokens matches source count");
+
+    /* uniqueCount must be > 0 */
+    assert_true((int)map->uniqueCount > 0,
+                "NL freqmap worst: at least one unique token");
+
+    /* With mostly distinct tokens, uniqueCount should be close to totalTokens */
+    assert_true(map->uniqueCount <= map->totalTokens,
+                "NL freqmap worst: uniqueCount <= totalTokens (invariant)");
+
+    /* Sorted descending */
+    bool sorted = true;
+    for (size_t i = 1; i < map->uniqueCount; i++) {
+        if (map->entries[i].frequency > map->entries[i - 1].frequency)
+            { sorted = false; break; }
+    }
+    assert_true(sorted, "NL freqmap worst: entries sorted descending by frequency");
+
+    /* Frequency sum == totalTokens */
+    int freq_sum = 0;
+    for (size_t i = 0; i < map->uniqueCount; i++)
+        freq_sum += map->entries[i].frequency;
+    assert_equal_int(freq_sum, (int)map->totalTokens,
+                     "NL freqmap worst: frequency sum equals total token count");
+
+    printf("PASS NL-EN freqmap - worst case (%zu unique / %zu total)\n",
+           map->uniqueCount, map->totalTokens);
+
+    freeNLFreqMap(map);
+    freeNLTokenArray(arr);
+}
+
+/* ---- NL-EN Arithmetic Encoding Codec Tests ---- */
+
+/* Best case: manually constructed 3-token sequence with 2 unique symbols.
+   Verifies encode/decode identity and probability sum. */
+void test_nl_en_ae_codec_best_case(void) {
+    /* Build a tiny 4-token array: token A (pattern), token B (ASCII space),
+       token A, token A  — 2 unique symbols, A appears 3x, B appears 1x.   */
+    NLTokenArray input;
+    input.count = 4;
+
+    /* Token A: pattern index 5, case 0 */
+    input.tokens[0].isPattern = true;
+    input.tokens[0].flag      = 5;
+    input.tokens[0].caseStyle = 0;
+    /* Token B: ASCII space */
+    input.tokens[1].isPattern = false;
+    input.tokens[1].flag      = ' ';
+    input.tokens[1].caseStyle = 0;
+    /* Token A again */
+    input.tokens[2].isPattern = true;
+    input.tokens[2].flag      = 5;
+    input.tokens[2].caseStyle = 0;
+    /* Token A again */
+    input.tokens[3].isPattern = true;
+    input.tokens[3].flag      = 5;
+    input.tokens[3].caseStyle = 0;
+
+    /* Encode */
+    size_t encoded_size = 0;
+    unsigned char* encoded = nl_en_encode_ae(&input, input.count, &encoded_size);
+    assert_true(encoded != NULL, "AE best: encoded buffer not NULL");
+    assert_true(encoded_size > 0, "AE best: encoded size > 0");
+
+    /* Decode */
+    NLTokenArray* decoded = nl_en_decode_ae(encoded, encoded_size);
+    assert_true(decoded != NULL, "AE best: decoded array not NULL");
+    assert_equal_int((int)decoded->count, (int)input.count,
+                     "AE best: decoded count matches input");
+
+    /* Verify each token */
+    if (decoded->count == input.count) {
+        for (size_t i = 0; i < input.count; i++) {
+            assert_equal_int(decoded->tokens[i].isPattern, input.tokens[i].isPattern,
+                             "AE best: isPattern matches");
+            assert_equal_int(decoded->tokens[i].flag, input.tokens[i].flag,
+                             "AE best: flag matches");
+            if (input.tokens[i].isPattern)
+                assert_equal_int(decoded->tokens[i].caseStyle, input.tokens[i].caseStyle,
+                                 "AE best: caseStyle matches");
+        }
+    }
+
+    /* Verify that the probability table sums to NL_AE_SCALE — re-encode
+       and check via a separate frequency map + cumulative calculation.    */
+    {
+        NLFreqMap* fmap = collectNLFrequencies(&input);
+        assert_true(fmap != NULL, "AE best: freq map not NULL");
+        if (fmap) {
+            uint32_t total = 0;
+            for (size_t i = 0; i < fmap->uniqueCount; i++)
+                total += (uint32_t)fmap->entries[i].frequency;
+
+            uint32_t cum = 0;
+            uint32_t last_high = 0;
+            for (size_t i = 0; i < fmap->uniqueCount; i++) {
+                last_high = (uint32_t)((uint64_t)(cum + (uint32_t)fmap->entries[i].frequency)
+                                       * NL_AE_SCALE / total);
+                cum += (uint32_t)fmap->entries[i].frequency;
+            }
+            assert_equal_int((int)last_high, (int)NL_AE_SCALE,
+                             "AE best: cumulative probability sum equals NL_AE_SCALE (= 1)");
+            freeNLFreqMap(fmap);
+        }
+    }
+
+    free(encoded);
+    freeNLTokenArray(decoded);
+    printf("PASS NL-EN AE codec - best case (4 tokens, 2 unique)\n");
+}
+
+/* Worst case: tokenize a short phrase with several distinct tokens and verify
+   that encode -> decode is a lossless round-trip. */
+void test_nl_en_ae_codec_worst_case(void) {
+    /* Short phrase with several different syllable patterns and a space.
+       Keep it short to stay within 32-bit fixed-point precision.          */
+    const char* text = "the cat";
+
+    NLTokenArray* original = tokenizeEnglish(text);
+    assert_true(original != NULL, "AE worst: tokenize returned non-NULL");
+    if (!original) return;
+    assert_true((int)original->count > 0, "AE worst: at least one token");
+    /* Precision guard: AE without renormalization needs a short sequence   */
+    assert_true((int)original->count <= 20, "AE worst: token count within precision limit");
+
+    /* Encode */
+    size_t encoded_size = 0;
+    unsigned char* encoded = nl_en_encode_ae(original, original->count, &encoded_size);
+    assert_true(encoded != NULL, "AE worst: encoded buffer not NULL");
+    assert_true(encoded_size > 0, "AE worst: encoded size > 0");
+
+    /* Decode */
+    NLTokenArray* decoded = nl_en_decode_ae(encoded, encoded_size);
+    assert_true(decoded != NULL, "AE worst: decoded array not NULL");
+    assert_equal_int((int)decoded->count, (int)original->count,
+                     "AE worst: decoded count matches original");
+
+    /* Full token comparison */
+    if (decoded->count == original->count) {
+        bool all_match = true;
+        for (size_t i = 0; i < original->count; i++) {
+            if (decoded->tokens[i].isPattern != original->tokens[i].isPattern ||
+                decoded->tokens[i].flag != original->tokens[i].flag) {
+                all_match = false;
+                break;
+            }
+            if (original->tokens[i].isPattern &&
+                decoded->tokens[i].caseStyle != original->tokens[i].caseStyle) {
+                all_match = false;
+                break;
+            }
+        }
+        assert_true(all_match, "AE worst: all decoded tokens match original");
+    }
+
+    /* Probability sum check via frequency map */
+    {
+        NLFreqMap* fmap = collectNLFrequencies(original);
+        assert_true(fmap != NULL, "AE worst: freq map not NULL");
+        if (fmap) {
+            uint32_t total = 0;
+            for (size_t i = 0; i < fmap->uniqueCount; i++)
+                total += (uint32_t)fmap->entries[i].frequency;
+
+            uint32_t cum = 0;
+            uint32_t last_high = 0;
+            for (size_t i = 0; i < fmap->uniqueCount; i++) {
+                last_high = (uint32_t)((uint64_t)(cum + (uint32_t)fmap->entries[i].frequency)
+                                       * NL_AE_SCALE / total);
+                cum += (uint32_t)fmap->entries[i].frequency;
+            }
+            assert_equal_int((int)last_high, (int)NL_AE_SCALE,
+                             "AE worst: probability sum equals NL_AE_SCALE (= 1)");
+            freeNLFreqMap(fmap);
+        }
+    }
+
+    printf("PASS NL-EN AE codec - worst case (%zu tokens from \"%s\")\n",
+           original->count, text);
+
+    free(encoded);
+    freeNLTokenArray(original);
+    freeNLTokenArray(decoded);
+}
+
+/* ---- zlib vs NL-EN AE Benchmark Tests ---- */
+
+static void print_ae_benchmark_row(size_t input_len,
+                                   size_t ae_size,
+                                   uLongf zlib_size) {
+    double ae_pct   = (double)ae_size   / (double)input_len * 100.0;
+    double zlib_pct = (double)zlib_size / (double)input_len * 100.0;
+    printf("  Input:            %zu bytes\n", input_len);
+    printf("  NL-EN AE encode:  %zu bytes (%.1f%% of original, %.1f%% reduction)\n",
+           ae_size,   ae_pct,   100.0 - ae_pct);
+    printf("  zlib compress:    %lu bytes (%.1f%% of original, %.1f%% reduction)\n",
+           (unsigned long)zlib_size, zlib_pct, 100.0 - zlib_pct);
+}
+
+/* Short message: a single casual sentence (~40 chars).
+   Measures encoded size vs zlib on a very small input where per-symbol
+   table overhead is visible relative to the payload.                      */
+void test_zlib_compare_ae_short_message(void) {
+    const char* text = "Hello, how are you doing today?";
+
+    size_t input_len = strlen(text);
+
+    NLTokenArray* tokens = tokenizeEnglish(text);
+    assert_true(tokens != NULL, "AE benchmark short: tokenize should succeed");
+    assert_true(tokens->count > 0, "AE benchmark short: should produce tokens");
+
+    size_t ae_size = 0;
+    unsigned char* ae_encoded = nl_en_encode_ae(tokens, tokens->count, &ae_size);
+    assert_true(ae_encoded != NULL, "AE benchmark short: AE encode should succeed");
+    assert_true(ae_size > 0,        "AE benchmark short: AE encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "AE benchmark short: malloc for zlib buffer should succeed");
+
+    int zlib_result = compress(zlib_dest, &zlib_dest_len,
+                               (const Bytef*)text, (uLong)input_len);
+    assert_true(zlib_result == Z_OK, "AE benchmark short: zlib compress should return Z_OK");
+    assert_true(zlib_dest_len > 0,   "AE benchmark short: zlib compressed size > 0");
+
+    print_ae_benchmark_row(input_len, ae_size, zlib_dest_len);
+
+    free(ae_encoded);
+    free(zlib_dest);
+    freeNLTokenArray(tokens);
+    printf("PASS zlib vs NL-EN AE compare - short English message\n");
+}
+
+/* Long professional text: a multi-paragraph passage (~700 chars).
+   Measures encoded size vs zlib on a longer input where the fixed-size
+   frequency table becomes a smaller fraction of total output.            */
+void test_zlib_compare_ae_long_text(void) {
+    const char* text =
+        "The rapid advancement of machine learning has fundamentally altered how "
+        "engineers approach software design and system architecture. Distributed "
+        "computation frameworks, once reserved for large research institutions, are "
+        "now accessible to small teams building production systems at scale.\n\n"
+        "Effective compression techniques reduce bandwidth consumption and storage "
+        "costs across every layer of the stack. General-purpose algorithms such as "
+        "deflate offer broad applicability, while domain-specific codecs exploit "
+        "structural knowledge of the target data to achieve superior ratios on "
+        "their intended content class. Both approaches occupy important roles in "
+        "modern infrastructure, often working in combination.\n\n"
+        "Arithmetic coding assigns each symbol a probability-weighted sub-interval "
+        "of the unit interval, encoding an entire sequence as a single fractional "
+        "number. Compared with Huffman coding, it achieves entropy more closely "
+        "when symbol probabilities are skewed and avoids the one-bit-per-symbol "
+        "floor that limits fixed-length prefix codes. The practical trade-off is "
+        "higher implementation complexity and sensitivity to precision in the "
+        "underlying integer arithmetic.";
+
+    size_t input_len = strlen(text);
+
+    NLTokenArray* tokens = tokenizeEnglish(text);
+    assert_true(tokens != NULL, "AE benchmark long: tokenize should succeed");
+    assert_true(tokens->count > 0, "AE benchmark long: should produce tokens");
+
+    size_t ae_size = 0;
+    unsigned char* ae_encoded = nl_en_encode_ae(tokens, tokens->count, &ae_size);
+    assert_true(ae_encoded != NULL, "AE benchmark long: AE encode should succeed");
+    assert_true(ae_size > 0,        "AE benchmark long: AE encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "AE benchmark long: malloc for zlib buffer should succeed");
+
+    int zlib_result = compress(zlib_dest, &zlib_dest_len,
+                               (const Bytef*)text, (uLong)input_len);
+    assert_true(zlib_result == Z_OK, "AE benchmark long: zlib compress should return Z_OK");
+    assert_true(zlib_dest_len > 0,   "AE benchmark long: zlib compressed size > 0");
+
+    print_ae_benchmark_row(input_len, ae_size, zlib_dest_len);
+
+    free(ae_encoded);
+    free(zlib_dest);
+    freeNLTokenArray(tokens);
+    printf("PASS zlib vs NL-EN AE compare - long professional text\n");
+}

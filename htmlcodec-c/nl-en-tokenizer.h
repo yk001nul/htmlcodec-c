@@ -24,4 +24,24 @@ typedef struct {
 NLTokenArray* tokenizeEnglish(const char* input);
 void freeNLTokenArray(NLTokenArray* arr);
 
+// Frequency entry: one unique NLToken from an NLTokenArray and its occurrence count.
+typedef struct {
+    NLToken token;     // copy of the NLToken from the source array
+    int     frequency; // number of times this token appears in the source array
+} NLFreqEntry;
+
+// Frequency map built from a completed NLTokenArray.
+// Entries are sorted by frequency descending so the most common tokens come first.
+typedef struct {
+    NLFreqEntry entries[NL_EN_MAX_TOKENS]; // fixed-capacity: at most one entry per unique token
+    size_t      uniqueCount;               // number of distinct tokens populated
+    size_t      totalTokens;               // arr->count of the source NLTokenArray
+} NLFreqMap;
+
+// Build a frequency map from a completed token array.
+// Returns a heap-allocated NLFreqMap sorted by frequency descending;
+// caller must call freeNLFreqMap().
+NLFreqMap* collectNLFrequencies(const NLTokenArray* arr);
+void freeNLFreqMap(NLFreqMap* map);
+
 #endif // NL_EN_TOKENIZER_H
