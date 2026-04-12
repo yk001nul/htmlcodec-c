@@ -253,3 +253,49 @@ void freeNLTokenArray(NLTokenArray* arr) {
         free(arr);
     }
 }
+
+// Compare two NLTokens for identity (isPattern + flag uniquely identify a token type)
+static int nl_token_equal(const NLToken* a, const NLToken* b) {
+    return a->isPattern == b->isPattern && a->flag == b->flag;
+}
+
+// qsort comparator: descending by frequency
+static int nl_freq_entry_cmp(const void* a, const void* b) {
+    const NLFreqEntry* ea = (const NLFreqEntry*)a;
+    const NLFreqEntry* eb = (const NLFreqEntry*)b;
+    return eb->frequency - ea->frequency;
+}
+
+NLFreqMap* collectNLFrequencies(const NLTokenArray* arr) {
+    if (!arr) return NULL;
+
+    NLFreqMap* map = (NLFreqMap*)malloc(sizeof(NLFreqMap));
+    if (!map) return NULL;
+
+    map->uniqueCount = 0;
+    map->totalTokens = arr->count;
+
+    for (size_t i = 0; i < arr->count; i++) {
+        const NLToken* tok = &arr->tokens[i];
+        int found = 0;
+        for (size_t j = 0; j < map->uniqueCount; j++) {
+            if (nl_token_equal(&map->entries[j].token, tok)) {
+                map->entries[j].frequency++;
+                found = 1;
+                break;
+            }
+        }
+        if (!found && map->uniqueCount < NL_EN_MAX_TOKENS) {
+            map->entries[map->uniqueCount].token     = *tok;
+            map->entries[map->uniqueCount].frequency = 1;
+            map->uniqueCount++;
+        }
+    }
+
+    qsort(map->entries, map->uniqueCount, sizeof(NLFreqEntry), nl_freq_entry_cmp);
+    return map;
+}
+
+void freeNLFreqMap(NLFreqMap* map) {
+    free(map);
+}

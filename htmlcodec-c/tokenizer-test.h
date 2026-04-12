@@ -105,4 +105,16 @@ void test_kl_freqmap_bad_hyphenation();
 // Knuth-Liang affix stripping tests
 void test_kl_affix_strip();
 
+// NL-EN Arithmetic Encoding codec tests
+void test_nl_en_ae_codec_best_case();
+void test_nl_en_ae_codec_worst_case();
+
+// zlib vs NL-EN AE benchmark tests
+void test_zlib_compare_ae_short_message();
+void test_zlib_compare_ae_long_text();
+
+// NL-EN Frequency map tests (tokenizer)
+void test_nl_en_freqmap_best_case();
+void test_nl_en_freqmap_worst_case();
+
 #endif // TOKENIZER_TEST_H

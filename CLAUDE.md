@@ -40,8 +40,8 @@ Each module is a self-contained `.h`/`.c` pair:
 |--------|---------|
 | `html-tokenizer` | State-machine HTML parser; produces `HTMLTokenArray` with text/openTag/closeTag tokens |
 | `css-tokenizer` | CSS parser for selectors, properties, at-rules, and comments |
-| `nl-en-tokenizer` | English/Dutch text tokenizer using a 512-entry pattern dictionary structured as: CV×48, CVC×48, CCV×48, CVCC×48, VC×48, VCC×48, CCC×16, prefixes×48, suffixes×128 (48 base + 80 fill), non-syllable trigraphs×16, digraphs×16. `NLToken.flag` is `unsigned short` (holds indices 0–511). Tokenizes right-to-left (suffix-first) then reverses the token list. `initialize_patterns()` builds `NL_EN_PATTERNS` using a round-robin merge across the 12 sections: each round picks one element per section (by rank within section), sorts the batch by ascending character length, then appends — placing the most-frequent patterns at lower indices for better variable-width compression. |
-| `nl-en-codec` | Bit-level encoder/decoder for `NLTokenArray`; pattern tokens use variable width 8–16 bits (1 isPattern + 4 bitLength + N index bits + 2 caseStyle), ASCII tokens use 9 bits (1+8). `outSize` reflects actual bits written (rounded up to bytes), not worst-case allocation. |
+| `nl-en-tokenizer` | English/Dutch text tokenizer using a 512-entry pattern dictionary structured as: CV×48, CVC×48, CCV×48, CVCC×48, VC×48, VCC×48, CCC×16, prefixes×48, suffixes×128 (48 base + 80 fill), non-syllable trigraphs×16, digraphs×16. `NLToken.flag` is `unsigned short` (holds indices 0–511). Tokenizes right-to-left (suffix-first) then reverses the token list. `initialize_patterns()` builds `NL_EN_PATTERNS` using a round-robin merge across the 12 sections: each round picks one element per section (by rank within section), sorts the batch by ascending character length, then appends — placing the most-frequent patterns at lower indices for better variable-width compression. `collectNLFrequencies()` takes a completed `NLTokenArray` and returns a heap-allocated `NLFreqMap` containing one `NLFreqEntry` (NLToken copy + frequency count) per unique token (identified by isPattern+flag), sorted descending by frequency; `uniqueCount` ≤ `totalTokens` ≤ `NL_EN_MAX_TOKENS`. |
+| `nl-en-codec` | Bit-level encoder/decoder for `NLTokenArray`; pattern tokens use variable width 8–16 bits (1 isPattern + 4 bitLength + N index bits + 2 caseStyle), ASCII tokens use 9 bits (1+8). `outSize` reflects actual bits written (rounded up to bytes), not worst-case allocation. Also provides arithmetic-encoding codec (`nl_en_encode_ae` / `nl_en_decode_ae`): builds a fixed-point probability table (`AESymbol`, cum bounds scaled to `NL_AE_SCALE`=65536) from the token frequency map, encodes the sequence by iteratively narrowing a `uint32_t` interval [low,high], then serialises the frequency table and final interval as a bit stream (13-bit count + 10-bit unique count + 22/18 bits per unique token + 64-bit tag [low,high]). Decoder rebuilds the probability table from the stored data, then performs arithmetic decoding using the stored lower bound as the initial code value. Precision is sufficient for sequences up to ~20 tokens with small alphabets. |
 | `cl-javascript-en-tokenizer` | JavaScript tokenizer using 256-entry pattern dictionary (ES2025 keywords, API tokens, operators, digraphs) |
 | `nl-en-us-hyphenator` | Knuth-Liang syllable extractor for US English. Reads `ushyphmax.tex` (4938 patterns) at first call to build a trie; falls back to the embedded `KL_US_HYPHEN_PATTERNS` array if the file is not found. `tokenizeKnuthLiang()` splits input on non-alphanumeric boundaries (using `KL_ASCII_PATTERNS[96]`), lowercases each word, then applies affix stripping before KL hyphenation: `kl_strip_affixes()` attempts to find the longest matching suffix (min length 3, from `KL_EN_SUFFIXES[128]`) that leaves a stem ≥ 3 chars; if found, the longest matching prefix (from `KL_EN_PREFIXES[128]`) is stripped from the stem if at least 3 chars remain. The prefix token (if any), KL-hyphenated stem syllables, and suffix token are emitted in order, all with `isHyphenated=true` and affixes always with `caseStyle=0`. If no suffix matches, normal KL hyphenation runs. Stem syllable case style is derived from the original-cased text. Both `KLTokenArray` (max `KL_MAX_TOKENS`=4096 tokens) and `KLToken` (inline `text[KL_MAX_TOKEN_TEXT=64]`) use fixed-size arrays with no per-token heap allocation. The trie is cached as a module-level static after the first call. `collectKLFrequencies()` takes a completed `KLTokenArray` and returns a heap-allocated `KLFreqMap` containing one `KLStringFreq` entry per unique string (text + frequency count), sorted descending by frequency; `uniqueCount` ≤ `totalTokens` ≤ `KL_MAX_TOKENS`. |
 
@@ -49,7 +49,7 @@ Each module is a self-contained `.h`/`.c` pair:
 
 `HTMLToken` and `HTMLAttribute` carry a `subdataType` field (`CSS`, `JS`, or `NL`) and a union pointer. After `parseHTML()`, call `enrichHTMLTokenSubdata()` to parse inline CSS/JS/NL content within HTML tokens and attributes.
 
-### Encoding Format (NL-EN Codec)
+### Encoding Format (NL-EN Codec — variable-width)
 
 Binary stream structure:
 - Header: 13 bits for token count
@@ -60,6 +60,18 @@ Binary stream structure:
 The bit-length N is the number of significant bits in the pattern index (no leading zeros; minimum 1). Index 0 encodes as N=1, bit="0". Index 511 encodes as N=9, bits="111111111".
 
 Case styles: `0`=all-lower, `1`=all-upper, `2`=first-upper, `3`=last-upper.
+
+### Encoding Format (NL-EN Arithmetic Codec)
+
+Bit stream structure produced by `nl_en_encode_ae`:
+- 13 bits: NLTokenArray count
+- 10 bits: unique token count (frequency table size)
+- Per unique token (isPattern=true): 1 + 9 (flag/index) + 2 (caseStyle) + 10 (frequency) = 22 bits
+- Per unique token (isPattern=false): 1 + 7 (flag−32, printable ASCII offset) + 10 (frequency) = 18 bits
+- 32 bits: arithmetic coding lower bound (sequence tag low)
+- 32 bits: arithmetic coding upper bound (sequence tag high)
+
+The arithmetic encoder iteratively narrows a `uint32_t` interval using cumulative probabilities scaled to 65536. The decoder reconstructs token order using the stored lower bound as the initial code value. No renormalization/bit-streaming is used, so practical precision supports sequences up to ~20 tokens for typical vocabularies.
 
 ### Test Structure
 

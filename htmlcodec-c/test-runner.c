@@ -69,6 +69,18 @@ int main(void) {
     printf("\n--- KNUTH-LIANG AFFIX STRIPPING TESTS ---\n");
     test_kl_affix_strip();
 
+    printf("\n--- NL-EN FREQUENCY MAP TESTS ---\n");
+    test_nl_en_freqmap_best_case();
+    test_nl_en_freqmap_worst_case();
+
+    printf("\n--- NL-EN ARITHMETIC ENCODING CODEC TESTS ---\n");
+    test_nl_en_ae_codec_best_case();
+    test_nl_en_ae_codec_worst_case();
+
+    printf("\n--- ZLIB VS NL-EN AE BENCHMARK TESTS ---\n");
+    test_zlib_compare_ae_short_message();
+    test_zlib_compare_ae_long_text();
+
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
 
