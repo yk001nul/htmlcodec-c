@@ -1693,21 +1693,55 @@ void test_css_tokenizable_comprehensive(void) {
         if (strcmp(arr->tokens[i].data.rule.selector, "html, body") == 0) {
             found_html_body = 1;
             int sz = arr->tokens[i].data.rule.selectorTokenSize;
-            assert_equal_int(sz, (int)strlen("html, body"),
-                             "CSS comprehensive: 'html, body' selector → ASCII fallback chars");
-            /* Every tokenizable must be ASCII (isPattern=false) */
-            int all_ascii = 1;
-            for (int j = 0; j < sz; j++) {
-                if (arr->tokens[i].data.rule.selectorTokens[j].isPattern) {
-                    all_ascii = 0; break;
-                }
-            }
-            assert_true(all_ascii,
-                        "CSS comprehensive: 'html, body' selector tokenizables are all ASCII");
+            /* Greedy scan: "html"(pattern) + ","(ASCII) + " "(ASCII) + "body"(pattern) = 4 */
+            assert_equal_int(sz, 4,
+                             "CSS comprehensive: 'html, body' selector → 4 greedy tokenizables");
+            assert_true(arr->tokens[i].data.rule.selectorTokens[0].isPattern,
+                        "CSS comprehensive: 'html, body' tok[0] is pattern (html)");
+            assert_true(!arr->tokens[i].data.rule.selectorTokens[1].isPattern,
+                        "CSS comprehensive: 'html, body' tok[1] is ASCII ','");
+            assert_true(!arr->tokens[i].data.rule.selectorTokens[2].isPattern,
+                        "CSS comprehensive: 'html, body' tok[2] is ASCII ' '");
+            assert_true(arr->tokens[i].data.rule.selectorTokens[3].isPattern,
+                        "CSS comprehensive: 'html, body' tok[3] is pattern (body)");
             break;
         }
     }
     assert_true(found_html_body, "CSS comprehensive: 'html, body' rule found");
+
+    /* ---- Compound selector "a:hover" splits into two patterns ---- */
+    /* Greedy: "a"(SEG1 tag) + ":hover"(SEG3 pseudo-class) = 2 pattern tokenizables */
+    int found_a_hover = 0;
+    for (int i = 0; i < arr->count; i++) {
+        if (arr->tokens[i].type != 0) continue;
+        if (strcmp(arr->tokens[i].data.rule.selector, "a:hover") != 0) continue;
+        found_a_hover = 1;
+        int sz = arr->tokens[i].data.rule.selectorTokenSize;
+        assert_equal_int(sz, 2, "CSS comprehensive: 'a:hover' → 2 tokenizables");
+        assert_true(arr->tokens[i].data.rule.selectorTokens[0].isPattern,
+                    "CSS comprehensive: 'a:hover' tok[0] is pattern (a)");
+        assert_true(arr->tokens[i].data.rule.selectorTokens[1].isPattern,
+                    "CSS comprehensive: 'a:hover' tok[1] is pattern (:hover)");
+        break;
+    }
+    assert_true(found_a_hover, "CSS comprehensive: 'a:hover' rule found");
+
+    /* ---- Pseudo-element "a::before" splits into two patterns ---- */
+    /* Greedy: "a"(SEG1) + "::before"(SEG4 pseudo-element) = 2 pattern tokenizables */
+    int found_a_before = 0;
+    for (int i = 0; i < arr->count; i++) {
+        if (arr->tokens[i].type != 0) continue;
+        if (strcmp(arr->tokens[i].data.rule.selector, "a::before") != 0) continue;
+        found_a_before = 1;
+        int sz = arr->tokens[i].data.rule.selectorTokenSize;
+        assert_equal_int(sz, 2, "CSS comprehensive: 'a::before' → 2 tokenizables");
+        assert_true(arr->tokens[i].data.rule.selectorTokens[0].isPattern,
+                    "CSS comprehensive: 'a::before' tok[0] is pattern (a)");
+        assert_true(arr->tokens[i].data.rule.selectorTokens[1].isPattern,
+                    "CSS comprehensive: 'a::before' tok[1] is pattern (::before)");
+        break;
+    }
+    assert_true(found_a_before, "CSS comprehensive: 'a::before' rule found");
 
     /* ---- Property name pattern matches ---- */
     /* In the h1 rule: color, font-size, font-weight should all be patterns */

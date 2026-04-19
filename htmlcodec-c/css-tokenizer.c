@@ -663,10 +663,10 @@ void parseCSS(const char* css, CSSTokenArray* result) {
         strncpy(token->data.rule.selector, &css[selectorStart], (size_t)copyLen);
         token->data.rule.selector[copyLen] = '\0';
 
-        /* Requirement 4: tokenize the selector */
-        css_tokenize_exact(token->data.rule.selector,
-                           token->data.rule.selectorTokens,
-                           &token->data.rule.selectorTokenSize);
+        /* Requirement 4: tokenize the selector (greedy longest-match, same as at-rules) */
+        css_tokenize_atrule(token->data.rule.selector,
+                            token->data.rule.selectorTokens,
+                            &token->data.rule.selectorTokenSize);
 
         i++; /* skip '{' */
 
