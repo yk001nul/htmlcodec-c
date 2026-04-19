@@ -39,6 +39,13 @@ int main(void) {
     test_css_empty_rules();
     test_css_malformed_input();
 
+    printf("\n--- CSS TOKENIZABLE TESTS ---\n");
+    test_css_pattern_codebook();
+    test_css_tokenizable_pattern_match();
+    test_css_tokenizable_ascii_fallback();
+    test_css_tokenizable_atrule();
+    test_css_tokenizable_comprehensive();
+
     printf("\n--- HTML INTEGRATED TOKENIZER TESTS ---\n");
     test_html_integrated_tokenizer_token_content();
     test_html_integrated_tokenizer_attr_content();

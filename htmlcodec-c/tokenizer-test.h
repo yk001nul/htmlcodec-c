@@ -117,4 +117,11 @@ void test_zlib_compare_ae_long_text();
 void test_nl_en_freqmap_best_case();
 void test_nl_en_freqmap_worst_case();
 
+// CSS Tokenizable tests (Requirements 2-5)
+void test_css_tokenizable_pattern_match();
+void test_css_tokenizable_ascii_fallback();
+void test_css_tokenizable_atrule();
+void test_css_pattern_codebook();
+void test_css_tokenizable_comprehensive();
+
 #endif // TOKENIZER_TEST_H

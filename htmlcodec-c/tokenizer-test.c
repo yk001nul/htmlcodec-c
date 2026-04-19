@@ -1423,6 +1423,349 @@ void test_nl_en_ae_codec_worst_case(void) {
     freeNLTokenArray(decoded);
 }
 
+/* ---- CSS Tokenizable Tests ---- */
+
+/* Best case: selector and property name/value each match a known pattern,
+   so each produces exactly 1 CSSTokenizable with isPattern=true.          */
+void test_css_tokenizable_pattern_match(void) {
+    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
+    if (!result) { printf("SKIP CSS tokenizable: malloc failed\n"); return; }
+
+    /* "div { color: red; }" — "div", "color", and "red" are all in the
+       pattern codebook (segments 1, 5, and 10 respectively).              */
+    parseCSS("div { color: red; }", result);
+    assert_equal_int(result->count, 1, "CSS tok pattern: 1 token");
+
+    CSSToken* tok = &result->tokens[0];
+    assert_equal_int(tok->type, 0, "CSS tok pattern: selector rule type");
+
+    /* Selector "div" should tokenize to exactly 1 CSSTokenizable */
+    assert_equal_int(tok->data.rule.selectorTokenSize, 1,
+                     "CSS tok pattern: selector 'div' -> 1 tokenizable");
+    assert_true(tok->data.rule.selectorTokens[0].isPattern,
+                "CSS tok pattern: selector token isPattern");
+
+    assert_equal_int(tok->data.rule.propertyCount, 1,
+                     "CSS tok pattern: 1 property");
+
+    CSSProperty* prop = &tok->data.rule.properties[0];
+
+    /* Property name "color" should tokenize to exactly 1 CSSTokenizable */
+    assert_equal_int(prop->nameTokenSize, 1,
+                     "CSS tok pattern: prop name 'color' -> 1 tokenizable");
+    assert_true(prop->nameTokens[0].isPattern,
+                "CSS tok pattern: name token isPattern");
+
+    /* Property value "red" should tokenize to exactly 1 CSSTokenizable */
+    assert_equal_int(prop->valueTokenSize, 1,
+                     "CSS tok pattern: prop value 'red' -> 1 tokenizable");
+    assert_true(prop->valueTokens[0].isPattern,
+                "CSS tok pattern: value token isPattern");
+
+    freeCSS(result);
+    printf("PASS CSS tokenizable - pattern match (selector + property + value)\n");
+}
+
+/* Worst case: selector and property are not in the codebook, so every
+   character becomes its own CSSTokenizable with isPattern=false.          */
+void test_css_tokenizable_ascii_fallback(void) {
+    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
+    if (!result) { printf("SKIP CSS tokenizable: malloc failed\n"); return; }
+
+    /* "zz { qqq: zzz; }" — none of these strings are CSS patterns */
+    parseCSS("zz { qqq: zzz; }", result);
+    assert_equal_int(result->count, 1, "CSS tok ascii: 1 token");
+
+    CSSToken* tok = &result->tokens[0];
+    CSSProperty* prop = &tok->data.rule.properties[0];
+
+    /* Selector "zz" is not in the codebook -> 2 ASCII CSSTokenizables */
+    assert_equal_int(tok->data.rule.selectorTokenSize, 2,
+                     "CSS tok ascii: selector 'zz' -> 2 tokenizables");
+    assert_true(!tok->data.rule.selectorTokens[0].isPattern,
+                "CSS tok ascii: selector[0] isPattern=false");
+    assert_equal_int(tok->data.rule.selectorTokens[0].flag, (int)'z',
+                     "CSS tok ascii: selector[0] flag='z'");
+
+    /* Property name "qqq" is not in codebook -> 3 ASCII CSSTokenizables */
+    assert_equal_int(prop->nameTokenSize, 3,
+                     "CSS tok ascii: name 'qqq' -> 3 tokenizables");
+    assert_true(!prop->nameTokens[0].isPattern,
+                "CSS tok ascii: name[0] isPattern=false");
+
+    /* Property value "zzz" is not in codebook -> 3 ASCII CSSTokenizables */
+    assert_equal_int(prop->valueTokenSize, 3,
+                     "CSS tok ascii: value 'zzz' -> 3 tokenizables");
+    assert_true(!prop->valueTokens[0].isPattern,
+                "CSS tok ascii: value[0] isPattern=false");
+
+    freeCSS(result);
+    printf("PASS CSS tokenizable - ASCII fallback (unknown selector/property)\n");
+}
+
+/* At-rule tokenization: greedy longest-match scanning.
+   "@media" is in the codebook; the remainder " screen" should be partly
+   tokenized as ASCII (' ') and the word "screen" which IS in the codebook.*/
+void test_css_tokenizable_atrule(void) {
+    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
+    if (!result) { printf("SKIP CSS tokenizable: malloc failed\n"); return; }
+
+    /* Use a simple at-rule whose identifier and named block are both in
+       the codebook so we can count precisely.                              */
+    parseCSS("@media screen { }", result);
+    assert_equal_int(result->count, 1, "CSS tok atrule: 1 token");
+
+    CSSToken* tok = &result->tokens[0];
+    assert_equal_int(tok->type, 1, "CSS tok atrule: at-rule type");
+
+    int sz = tok->data.atRule.atRuleTokenSize;
+    assert_true(sz > 0, "CSS tok atrule: atRuleTokenSize > 0");
+
+    /* First tokenizable must be the "@media" pattern (isPattern=true) */
+    assert_true(tok->data.atRule.atRuleTokens[0].isPattern,
+                "CSS tok atrule: first token isPattern (matches '@media')");
+
+    /* At least one more tokenizable for ' ' and "screen" */
+    assert_true(sz >= 2, "CSS tok atrule: at least 2 tokenizables");
+
+    /* The second tokenizable should be the space character (isPattern=false) */
+    assert_true(!tok->data.atRule.atRuleTokens[1].isPattern,
+                "CSS tok atrule: second token isPattern=false (space)");
+    assert_equal_int(tok->data.atRule.atRuleTokens[1].flag, (int)' ',
+                     "CSS tok atrule: second token flag=' '");
+
+    /* The last tokenizable should be "screen" (isPattern=true) */
+    assert_true(tok->data.atRule.atRuleTokens[sz - 1].isPattern,
+                "CSS tok atrule: last token isPattern (matches 'screen')");
+
+    freeCSS(result);
+    printf("PASS CSS tokenizable - at-rule greedy tokenization (@media screen)\n");
+}
+
+/* Verify that the segment boundary constants are consistent: each start
+   index must be non-negative, in ascending order, and within the pattern
+   count.                                                                  */
+void test_css_pattern_codebook(void) {
+    assert_true(CSS_PATTERN_COUNT > 0,
+                "CSS codebook: pattern count > 0");
+    assert_true(CSS_SEG1_START == 0,
+                "CSS codebook: seg1 starts at 0");
+    assert_true(CSS_SEG2_START  > CSS_SEG1_START,  "CSS codebook: seg2 > seg1");
+    assert_true(CSS_SEG3_START  > CSS_SEG2_START,  "CSS codebook: seg3 > seg2");
+    assert_true(CSS_SEG4_START  > CSS_SEG3_START,  "CSS codebook: seg4 > seg3");
+    assert_true(CSS_SEG5_START  > CSS_SEG4_START,  "CSS codebook: seg5 > seg4");
+    assert_true(CSS_SEG6_START  > CSS_SEG5_START,  "CSS codebook: seg6 > seg5");
+    assert_true(CSS_SEG7_START  > CSS_SEG6_START,  "CSS codebook: seg7 > seg6");
+    assert_true(CSS_SEG8_START  > CSS_SEG7_START,  "CSS codebook: seg8 > seg7");
+    assert_true(CSS_SEG9_START  > CSS_SEG8_START,  "CSS codebook: seg9 > seg8");
+    assert_true(CSS_SEG10_START > CSS_SEG9_START,  "CSS codebook: seg10 > seg9");
+    assert_true(CSS_SEG11_START > CSS_SEG10_START, "CSS codebook: seg11 > seg10");
+    assert_true(CSS_SEG11_START < CSS_PATTERN_COUNT,
+                "CSS codebook: seg11 start within total count");
+
+    /* Spot check: "div" should be findable in segment 1 */
+    int found_div = 0;
+    for (int i = CSS_SEG1_START; i < CSS_SEG2_START; i++) {
+        if (strcmp(CSS_PATTERNS[i], "div") == 0) { found_div = 1; break; }
+    }
+    assert_true(found_div, "CSS codebook: 'div' found in seg1 (HTML tags)");
+
+    /* Spot check: "color" should be in segment 5 (CSS properties) */
+    int found_color = 0;
+    for (int i = CSS_SEG5_START; i < CSS_SEG6_START; i++) {
+        if (strcmp(CSS_PATTERNS[i], "color") == 0) { found_color = 1; break; }
+    }
+    assert_true(found_color, "CSS codebook: 'color' found in seg5 (properties)");
+
+    /* Spot check: "@media" should be in segment 6 (at-rules) */
+    int found_media = 0;
+    for (int i = CSS_SEG6_START; i < CSS_SEG7_START; i++) {
+        if (strcmp(CSS_PATTERNS[i], "@media") == 0) { found_media = 1; break; }
+    }
+    assert_true(found_media, "CSS codebook: '@media' found in seg6 (at-rules)");
+
+    printf("PASS CSS codebook - segment boundaries and spot checks (%d total patterns)\n",
+           CSS_PATTERN_COUNT);
+}
+
+/* ---- CSS Tokenizable Comprehensive Test ---- */
+
+void test_css_tokenizable_comprehensive(void) {
+    /* A realistic CSS snippet exercising all 11 codebook segments:
+       comments, at-rules (@import, @font-face, @keyframes, @media),
+       type/class/id/combinators/pseudo-class/pseudo-element selectors,
+       and a wide range of CSS properties and values.              */
+    static const char css[] =
+        "/* Global reset */\n"
+        "@import url('base.css');\n"
+        "@font-face { font-family: Inter; src: url('inter.woff2'); font-weight: normal; }\n"
+        "@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }\n"
+        "@media screen and (max-width: 768px) { body { font-size: 14px; } }\n"
+        "* { box-sizing: border-box; margin: 0; padding: 0; }\n"
+        "/* Typography */\n"
+        "html, body { width: 100%; height: 100%; overflow: hidden; }\n"
+        "h1 { font-size: 2rem; font-weight: bold; color: darkblue; }\n"
+        "p { font-size: 1rem; line-height: 1.5; color: inherit; }\n"
+        "a { color: blue; text-decoration: none; cursor: pointer; }\n"
+        "a:hover { color: darkblue; text-decoration: underline; }\n"
+        "a:focus { outline: 2px solid blue; outline-offset: 2px; }\n"
+        "a::before { content: ''; display: none; }\n"
+        "/* Layout */\n"
+        ".container { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 16px; }\n"
+        ".flex { display: flex; align-items: center; gap: 16px; }\n"
+        ".grid { display: grid; grid-template-columns: repeat(12, 1fr); column-gap: 16px; }\n"
+        "#header { position: sticky; top: 0; z-index: 100; background: white; }\n"
+        "/* Components */\n"
+        ".card { background: white; border: 1px solid silver; border-radius: 8px; overflow: hidden; }\n"
+        ".card:hover { transform: translateY(-2px); opacity: 0.95; }\n"
+        ".card > .body { padding: 16px; color: #333; }\n"
+        "nav > ul { list-style: none; display: flex; margin: 0; padding: 0; }\n"
+        "nav > ul > li:first-child a:hover { color: royalblue; text-decoration: underline; }\n";
+
+    CSSTokenArray* arr = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
+    if (!arr) {
+        printf("? FAIL: CSS comprehensive - malloc failed\n");
+        testsFailed++;
+        return;
+    }
+    parseCSS(css, arr);
+
+    /* ---- Overall token count ---- */
+    /* 4 comments + 4 at-rules + 17 selector rules = 25 */
+    assert_equal_int(arr->count, 25, "CSS comprehensive: total token count");
+
+    /* ---- Type distribution ---- */
+    int nComments = 0, nAtRules = 0, nRules = 0;
+    for (int i = 0; i < arr->count; i++) {
+        if (arr->tokens[i].type == 2) nComments++;
+        else if (arr->tokens[i].type == 1) nAtRules++;
+        else nRules++;
+    }
+    assert_equal_int(nComments, 4, "CSS comprehensive: 4 comments");
+    assert_equal_int(nAtRules,  4, "CSS comprehensive: 4 at-rules");
+    assert_equal_int(nRules,   17, "CSS comprehensive: 17 selector rules");
+
+    /* ---- All at-rules begin with an isPattern tokenizable ---- */
+    int atRuleIdx = 0;
+    for (int i = 0; i < arr->count && atRuleIdx < 4; i++) {
+        if (arr->tokens[i].type != 1) continue;
+        assert_true(arr->tokens[i].data.atRule.atRuleTokenSize > 0,
+                    "CSS comprehensive: at-rule has tokenizables");
+        assert_true(arr->tokens[i].data.atRule.atRuleTokens[0].isPattern,
+                    "CSS comprehensive: at-rule first tokenizable is pattern");
+        atRuleIdx++;
+    }
+
+    /* ---- Simple type selectors produce exactly 1 pattern tokenizable ---- */
+    /* Find rules whose selector is exactly "h1", "p", "a" */
+    int found_h1 = 0, found_p = 0, found_a = 0;
+    for (int i = 0; i < arr->count; i++) {
+        if (arr->tokens[i].type != 0) continue;
+        const char* sel = arr->tokens[i].data.rule.selector;
+        int sz = arr->tokens[i].data.rule.selectorTokenSize;
+        if (strcmp(sel, "h1") == 0) {
+            found_h1 = 1;
+            assert_equal_int(sz, 1, "CSS comprehensive: 'h1' selector → 1 tokenizable");
+            assert_true(arr->tokens[i].data.rule.selectorTokens[0].isPattern,
+                        "CSS comprehensive: 'h1' selector tokenizable is pattern");
+        }
+        if (strcmp(sel, "p") == 0) {
+            found_p = 1;
+            assert_equal_int(sz, 1, "CSS comprehensive: 'p' selector → 1 tokenizable");
+            assert_true(arr->tokens[i].data.rule.selectorTokens[0].isPattern,
+                        "CSS comprehensive: 'p' selector tokenizable is pattern");
+        }
+        if (strcmp(sel, "a") == 0) {
+            found_a = 1;
+            assert_equal_int(sz, 1, "CSS comprehensive: 'a' selector → 1 tokenizable");
+            assert_true(arr->tokens[i].data.rule.selectorTokens[0].isPattern,
+                        "CSS comprehensive: 'a' selector tokenizable is pattern");
+        }
+    }
+    assert_true(found_h1, "CSS comprehensive: 'h1' rule found");
+    assert_true(found_p,  "CSS comprehensive: 'p' rule found");
+    assert_true(found_a,  "CSS comprehensive: 'a' rule found");
+
+    /* ---- Multi-selector "html, body" falls back to ASCII tokenizables ---- */
+    int found_html_body = 0;
+    for (int i = 0; i < arr->count; i++) {
+        if (arr->tokens[i].type != 0) continue;
+        if (strcmp(arr->tokens[i].data.rule.selector, "html, body") == 0) {
+            found_html_body = 1;
+            int sz = arr->tokens[i].data.rule.selectorTokenSize;
+            assert_equal_int(sz, (int)strlen("html, body"),
+                             "CSS comprehensive: 'html, body' selector → ASCII fallback chars");
+            /* Every tokenizable must be ASCII (isPattern=false) */
+            int all_ascii = 1;
+            for (int j = 0; j < sz; j++) {
+                if (arr->tokens[i].data.rule.selectorTokens[j].isPattern) {
+                    all_ascii = 0; break;
+                }
+            }
+            assert_true(all_ascii,
+                        "CSS comprehensive: 'html, body' selector tokenizables are all ASCII");
+            break;
+        }
+    }
+    assert_true(found_html_body, "CSS comprehensive: 'html, body' rule found");
+
+    /* ---- Property name pattern matches ---- */
+    /* In the h1 rule: color, font-size, font-weight should all be patterns */
+    for (int i = 0; i < arr->count; i++) {
+        if (arr->tokens[i].type != 0) continue;
+        if (strcmp(arr->tokens[i].data.rule.selector, "h1") != 0) continue;
+        int nProps = arr->tokens[i].data.rule.propertyCount;
+        assert_true(nProps >= 3, "CSS comprehensive: h1 has >= 3 properties");
+        for (int j = 0; j < nProps; j++) {
+            CSSProperty* prop = &arr->tokens[i].data.rule.properties[j];
+            assert_equal_int(prop->nameTokenSize, 1,
+                             "CSS comprehensive: h1 property name → 1 tokenizable");
+            assert_true(prop->nameTokens[0].isPattern,
+                        "CSS comprehensive: h1 property name tokenizable is pattern");
+        }
+        break;
+    }
+
+    /* ---- Property value pattern matches: blue, bold, flex, none ---- */
+    int found_blue = 0, found_bold = 0, found_flex = 0, found_none = 0;
+    for (int i = 0; i < arr->count; i++) {
+        if (arr->tokens[i].type != 0) continue;
+        int nProps = arr->tokens[i].data.rule.propertyCount;
+        for (int j = 0; j < nProps; j++) {
+            CSSProperty* prop = &arr->tokens[i].data.rule.properties[j];
+            if (prop->valueTokenSize == 1 && prop->valueTokens[0].isPattern) {
+                /* Look up which pattern this maps to */
+                unsigned short idx = prop->valueTokens[0].flag;
+                if (idx < (unsigned short)CSS_PATTERN_COUNT) {
+                    const char* pname = CSS_PATTERNS[idx];
+                    if (strcmp(pname, "blue")  == 0) found_blue = 1;
+                    if (strcmp(pname, "bold")  == 0) found_bold = 1;
+                    if (strcmp(pname, "flex")  == 0) found_flex = 1;
+                    if (strcmp(pname, "none")  == 0) found_none = 1;
+                }
+            }
+        }
+    }
+    assert_true(found_blue, "CSS comprehensive: value 'blue' → pattern tokenizable");
+    assert_true(found_bold, "CSS comprehensive: value 'bold' → pattern tokenizable");
+    assert_true(found_flex, "CSS comprehensive: value 'flex' → pattern tokenizable");
+    assert_true(found_none, "CSS comprehensive: value 'none' → pattern tokenizable");
+
+    /* ---- All selector rules have at least one property ---- */
+    int all_have_props = 1;
+    for (int i = 0; i < arr->count; i++) {
+        if (arr->tokens[i].type != 0) continue;
+        if (arr->tokens[i].data.rule.propertyCount == 0) {
+            all_have_props = 0; break;
+        }
+    }
+    assert_true(all_have_props,
+                "CSS comprehensive: every selector rule has at least 1 property");
+
+    printf("PASS CSS tokenizable comprehensive test\n");
+    freeCSS(arr);
+}
+
 /* ---- zlib vs NL-EN AE Benchmark Tests ---- */
 
 static void print_ae_benchmark_row(size_t input_len,
