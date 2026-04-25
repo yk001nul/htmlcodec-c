@@ -89,6 +89,17 @@ Bit stream structure produced by `css_encode_ae`:
 
 The flat `CSSTokenizable` sequence encodes all tokens concatenated in order. Decoding partitions the recovered sequence back into `CSSToken` structs using the per-token sizes and the embedded ASCII sentinels (`{`, `:`, `;`, `}`). Precision supports sequences of ≤ ~15 total tokens with adequate repetition.
 
+### zlib vs CSS AE Benchmark
+
+Two benchmark tests compare `css_encode_ae` output size against zlib applied to the raw CSS string:
+
+| Case | CSS input | ruleTokenSize | uniqueCount | CSS AE | zlib |
+|------|-----------|:---:|:---:|--------|------|
+| Best  | `body { color: red; color: red; }` (32 B) | 11 | 7 | ~31 B | ~29 B |
+| Worst | `a:hover { font-size: 2em; }` (27 B)       | 10 | 10 | ~38 B | ~35 B |
+
+Best case uses heavy token repetition (7 unique / 11 total); the frequency table pays off and AE approaches zlib. Worst case has no repetition (10 unique / 10 total); both methods expand the tiny input, but AE is slightly larger due to the per-symbol table overhead.
+
 ### Test Structure
 
 Tests live in `tokenizer-test.c` with declarations in `tokenizer-test.h`. Tests use simple assertion helpers (`assert_equal_int`, `assert_equal_str`, `assert_true`) and global `testsPassed`/`testsFailed` counters. Adding a new test requires declaring it in `tokenizer-test.h`, implementing it in `tokenizer-test.c`, and calling it from `test-runner.c`.

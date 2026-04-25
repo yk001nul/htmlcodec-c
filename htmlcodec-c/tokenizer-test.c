@@ -2098,3 +2098,87 @@ void test_css_ae_codec_worst_case(void) {
     free(arr);
     printf("PASS CSS AE codec worst case\n");
 }
+
+/* ---- zlib vs CSS AE Benchmark Tests ---- */
+
+static void print_css_ae_benchmark_row(size_t input_len,
+                                       size_t ae_size,
+                                       uLongf zlib_size) {
+    double ae_pct   = (double)ae_size   / (double)input_len * 100.0;
+    double zlib_pct = (double)zlib_size / (double)input_len * 100.0;
+    printf("  Input:           %zu bytes\n", input_len);
+    printf("  CSS AE encode:   %zu bytes (%.1f%% of original, %.1f%% reduction)\n",
+           ae_size,   ae_pct,   100.0 - ae_pct);
+    printf("  zlib compress:   %lu bytes (%.1f%% of original, %.1f%% reduction)\n",
+           (unsigned long)zlib_size, zlib_pct, 100.0 - zlib_pct);
+}
+
+/* Best case: short rule with maximum token repetition.
+   Two identical properties share the same ruleToken symbols, so the AE
+   frequency table carries useful probability information relative to the
+   raw byte count.  ruleTokenSize = 11, uniqueCount = 7.                  */
+void test_zlib_compare_css_ae_best_case(void) {
+    const char* css = "body { color: red; color: red; }";
+    size_t input_len = strlen(css);
+
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS AE bench best: alloc");
+    parseCSS(css, arr);
+    assert_true(arr->count > 0, "CSS AE bench best: parsed token count > 0");
+
+    size_t ae_size = 0;
+    unsigned char* ae_encoded = css_encode_ae(arr, &ae_size);
+    assert_true(ae_encoded != NULL, "CSS AE bench best: encode non-NULL");
+    assert_true(ae_size > 0,        "CSS AE bench best: encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "CSS AE bench best: malloc for zlib buffer");
+
+    int zlib_result = compress(zlib_dest, &zlib_dest_len,
+                               (const Bytef*)css, (uLong)input_len);
+    assert_true(zlib_result == Z_OK, "CSS AE bench best: zlib compress Z_OK");
+    assert_true(zlib_dest_len > 0,   "CSS AE bench best: zlib size > 0");
+
+    print_css_ae_benchmark_row(input_len, ae_size, zlib_dest_len);
+
+    free(ae_encoded);
+    free(zlib_dest);
+    free(arr);
+    printf("PASS zlib vs CSS AE compare - best case (repeated properties)\n");
+}
+
+/* Worst case: short rule with no token repetition.
+   Every ruleToken is unique (10 total, 10 unique), so the AE frequency
+   table overhead is large relative to the payload and the codec is at
+   a disadvantage compared to zlib.  ruleTokenSize = 10, uniqueCount = 10. */
+void test_zlib_compare_css_ae_worst_case(void) {
+    const char* css = "a:hover { font-size: 2em; }";
+    size_t input_len = strlen(css);
+
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS AE bench worst: alloc");
+    parseCSS(css, arr);
+    assert_true(arr->count > 0, "CSS AE bench worst: parsed token count > 0");
+
+    size_t ae_size = 0;
+    unsigned char* ae_encoded = css_encode_ae(arr, &ae_size);
+    assert_true(ae_encoded != NULL, "CSS AE bench worst: encode non-NULL");
+    assert_true(ae_size > 0,        "CSS AE bench worst: encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "CSS AE bench worst: malloc for zlib buffer");
+
+    int zlib_result = compress(zlib_dest, &zlib_dest_len,
+                               (const Bytef*)css, (uLong)input_len);
+    assert_true(zlib_result == Z_OK, "CSS AE bench worst: zlib compress Z_OK");
+    assert_true(zlib_dest_len > 0,   "CSS AE bench worst: zlib size > 0");
+
+    print_css_ae_benchmark_row(input_len, ae_size, zlib_dest_len);
+
+    free(ae_encoded);
+    free(zlib_dest);
+    free(arr);
+    printf("PASS zlib vs CSS AE compare - worst case (all-unique tokens)\n");
+}
