@@ -5,9 +5,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-/* Fixed-point scale for arithmetic coding (same as NL-EN codec) */
-#define CSS_AE_SCALE    65536u
-#define CSS_AE_MAX_CODE 0xFFFFFFFFu
+/* Fixed-point probability denominator (same as NL-EN codec) */
+#define CSS_AE_SCALE  65536u
 
 /* One entry in the arithmetic-coding symbol table */
 typedef struct {
@@ -27,8 +26,7 @@ typedef struct {
  *   Per unique token (isPattern=false): 1+7+10  = 18 bits
  *    9 bits : CSSToken count
  *   Per CSSToken: 2 (type) + 10 (tokenizable size) = 12 bits
- *   32 bits : sequence tag lower bound
- *   32 bits : sequence tag upper bound
+ *   Variable : renormalized AE bitstream (E1/E2/E3 bit-emission)
  *
  * @param arr     CSSTokenArray to encode
  * @param outSize Output: size of returned buffer in bytes

@@ -2258,3 +2258,124 @@ void test_zlib_compare_css_ae_long_stylesheet(void) {
     free(arr);
     printf("PASS zlib vs CSS AE compare - long stylesheet\n");
 }
+
+/* ── Renormalization round-trip tests ────────────────────────────────────── */
+
+/* NL-EN AE: encode/decode a 30+ token sequence that previously collapsed
+   with fixed-point 32-bit AE (no renormalization).  Verifies that the
+   renormalized codec produces a lossless round-trip for long inputs.        */
+void test_nl_en_ae_codec_long_sequence(void) {
+    /* Two repetitions of a sentence give enough token diversity and count
+       to guarantee collapse under the old fixed-tag approach while staying
+       fast in this unit test.                                               */
+    const char* text =
+        "the quick brown fox jumps over the lazy dog "
+        "the quick brown fox jumps over the lazy dog";
+
+    NLTokenArray* original = tokenizeEnglish(text);
+    assert_true(original != NULL, "NL AE long: tokenize non-NULL");
+    if (!original) return;
+
+    assert_true((int)original->count >= 20,
+                "NL AE long: at least 20 tokens (enough to stress precision)");
+
+    size_t encoded_size = 0;
+    unsigned char* encoded = nl_en_encode_ae(original, original->count, &encoded_size);
+    assert_true(encoded != NULL,    "NL AE long: encoded non-NULL");
+    assert_true(encoded_size > 0,   "NL AE long: encoded size > 0");
+    if (!encoded) { freeNLTokenArray(original); return; }
+
+    NLTokenArray* decoded = nl_en_decode_ae(encoded, encoded_size);
+    assert_true(decoded != NULL, "NL AE long: decoded non-NULL");
+    if (!decoded) { free(encoded); freeNLTokenArray(original); return; }
+
+    assert_equal_int((int)decoded->count, (int)original->count,
+                     "NL AE long: decoded count matches original");
+
+    if (decoded->count == original->count) {
+        bool all_match = true;
+        for (size_t i = 0; i < original->count; i++) {
+            if (decoded->tokens[i].isPattern != original->tokens[i].isPattern ||
+                decoded->tokens[i].flag      != original->tokens[i].flag) {
+                all_match = false;
+                break;
+            }
+            if (original->tokens[i].isPattern &&
+                decoded->tokens[i].caseStyle != original->tokens[i].caseStyle) {
+                all_match = false;
+                break;
+            }
+        }
+        assert_true(all_match, "NL AE long: all decoded tokens match original");
+    }
+
+    printf("PASS NL-EN AE codec - long sequence (%zu tokens, %zu bytes encoded)\n",
+           original->count, encoded_size);
+
+    free(encoded);
+    freeNLTokenArray(decoded);
+    freeNLTokenArray(original);
+}
+
+/* CSS AE: encode/decode a rule with 6 properties — 30+ ruleTokenizables.
+   Previously failed due to precision collapse; should now round-trip
+   correctly with renormalization.                                           */
+void test_css_ae_codec_long_rule(void) {
+    const char* css =
+        "section { display: flex; flex-direction: column; "
+        "align-items: center; justify-content: center; "
+        "background-color: white; color: black; }";
+
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS AE long rule: alloc");
+    if (!arr) return;
+
+    parseCSS(css, arr);
+    assert_true(arr->count > 0, "CSS AE long rule: parseCSS produced tokens");
+    if (arr->count == 0) { free(arr); return; }
+
+    /* Confirm the rule has the expected properties */
+    CSSToken* rule = &arr->tokens[0];
+    assert_true(rule->type == 0, "CSS AE long rule: type is rule");
+    assert_true(rule->data.rule.propertyCount == 6,
+                "CSS AE long rule: 6 properties parsed");
+    assert_true(rule->data.rule.ruleTokenSize >= 20,
+                "CSS AE long rule: ruleTokenSize >= 20 (exercises renorm)");
+
+    size_t ae_size = 0;
+    unsigned char* ae_encoded = css_encode_ae(arr, &ae_size);
+    assert_true(ae_encoded != NULL, "CSS AE long rule: encoded non-NULL");
+    assert_true(ae_size > 0,        "CSS AE long rule: encoded size > 0");
+    if (!ae_encoded) { free(arr); return; }
+
+    CSSTokenArray* decoded = css_decode_ae(ae_encoded, ae_size);
+    assert_true(decoded != NULL, "CSS AE long rule: decoded non-NULL");
+    if (!decoded) { free(ae_encoded); free(arr); return; }
+
+    assert_equal_int(decoded->count, arr->count,
+                     "CSS AE long rule: decoded token count matches");
+
+    if (decoded->count > 0 && arr->count > 0) {
+        CSSToken* dr = &decoded->tokens[0];
+        assert_equal_int(dr->type, 0,
+                         "CSS AE long rule: decoded type is rule");
+        assert_equal_int(dr->data.rule.propertyCount,
+                         rule->data.rule.propertyCount,
+                         "CSS AE long rule: propertyCount round-trips");
+        assert_equal_int(dr->data.rule.selectorTokenSize,
+                         rule->data.rule.selectorTokenSize,
+                         "CSS AE long rule: selectorTokenSize round-trips");
+        assert_equal_int(dr->data.rule.ruleTokenSize,
+                         rule->data.rule.ruleTokenSize,
+                         "CSS AE long rule: ruleTokenSize round-trips");
+    }
+
+    printf("PASS CSS AE codec - long rule (%d ruleTokens, %d properties, %zu bytes encoded)\n",
+           rule->data.rule.ruleTokenSize,
+           rule->data.rule.propertyCount,
+           ae_size);
+
+    free(ae_encoded);
+    free(decoded);
+    free(arr);
+}

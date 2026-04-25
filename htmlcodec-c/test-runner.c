@@ -83,12 +83,14 @@ int main(void) {
     printf("\n--- NL-EN ARITHMETIC ENCODING CODEC TESTS ---\n");
     test_nl_en_ae_codec_best_case();
     test_nl_en_ae_codec_worst_case();
+    test_nl_en_ae_codec_long_sequence();
 
     printf("\n--- ZLIB VS NL-EN AE BENCHMARK TESTS ---\n");
     test_zlib_compare_ae_short_message();
     test_zlib_compare_ae_long_text();
 
     printf("\n--- CSS AE CODEC TESTS ---\n");
+    test_css_ae_codec_long_rule();
     test_css_comment_tokenization();
     test_css_flatten_rule_tokens();
     test_css_freqmap_best_case();

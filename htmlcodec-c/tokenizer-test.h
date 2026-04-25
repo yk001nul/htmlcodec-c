@@ -108,6 +108,7 @@ void test_kl_affix_strip();
 // NL-EN Arithmetic Encoding codec tests
 void test_nl_en_ae_codec_best_case();
 void test_nl_en_ae_codec_worst_case();
+void test_nl_en_ae_codec_long_sequence();
 
 // zlib vs NL-EN AE benchmark tests
 void test_zlib_compare_ae_short_message();
@@ -123,6 +124,9 @@ void test_css_tokenizable_ascii_fallback();
 void test_css_tokenizable_atrule();
 void test_css_pattern_codebook();
 void test_css_tokenizable_comprehensive();
+
+// CSS AE long rule round-trip (renormalization test)
+void test_css_ae_codec_long_rule();
 
 // CSS codec AE tests (csscodec.md)
 void test_css_comment_tokenization();
