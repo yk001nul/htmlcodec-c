@@ -202,8 +202,8 @@ NLTokenArray* tokenizeEnglish(const char* input) {
                 int style = detect_case_style(input + (pos - pLen), pLen);
                 NLToken token = {true, (unsigned short)i, style};
                 result->tokens[result->count++] = token;
-                printf("[NL-EN] Pattern matched: \"%s\" (index %d, caseStyle %d)\n",
-                       NL_EN_PATTERNS[i], i, style);
+                //printf("[NL-EN] Pattern matched: \"%s\" (index %d, caseStyle %d)\n",
+                //       NL_EN_PATTERNS[i], i, style);
                 pos -= pLen;
                 patternHit++;
                 if (pLen <= NL_EN_HISTOGRAM_MAX_LEN) histogram[pLen]++;
