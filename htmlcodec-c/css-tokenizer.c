@@ -603,6 +603,16 @@ void parseCSS(const char* css, CSSTokenArray* result) {
                           ? commentLen : CSS_MAX_PROPERTY_VALUE - 1;
             strncpy(token->data.comment.content, &css[commentStart], (size_t)copyLen);
             token->data.comment.content[copyLen] = '\0';
+
+            /* Req 1 (csscodec): character-level tokenization of comment */
+            token->data.comment.commentTokenSize = 0;
+            for (int ci = 0; ci < copyLen &&
+                 token->data.comment.commentTokenSize < CSS_MAX_TOKENIZABLE; ci++) {
+                token->data.comment.commentTokens[token->data.comment.commentTokenSize].isPattern = false;
+                token->data.comment.commentTokens[token->data.comment.commentTokenSize].flag =
+                    (unsigned short)(unsigned char)token->data.comment.content[ci];
+                token->data.comment.commentTokenSize++;
+            }
             continue;
         }
 
@@ -722,6 +732,9 @@ void parseCSS(const char* css, CSSTokenArray* result) {
             if (i < len && css[i] == ';') i++;
         }
 
+        /* Req 2 (csscodec): flatten selector + properties into ruleTokens */
+        css_flatten_rule_tokens(token);
+
         if (i < len && css[i] == '}') i++;
     }
 }
@@ -730,4 +743,112 @@ void freeCSS(CSSTokenArray* arr) {
     if (arr != NULL) {
         free(arr);
     }
+}
+
+/* =========================================================================
+   Req 2 (csscodec) – css_flatten_rule_tokens
+   ========================================================================= */
+
+void css_flatten_rule_tokens(CSSToken* token) {
+    if (!token || token->type != 0) return;
+
+    CSSTokenizable* out = token->data.rule.ruleTokens;
+    int size = 0;
+
+#define APPEND(ip, fl) \
+    do { if (size < CSS_MAX_TOKENIZABLE) { \
+        out[size].isPattern = (ip); \
+        out[size].flag = (unsigned short)(fl); \
+        size++; \
+    } } while (0)
+
+    /* selector tokens */
+    for (int i = 0; i < token->data.rule.selectorTokenSize &&
+                    size < CSS_MAX_TOKENIZABLE; i++) {
+        out[size++] = token->data.rule.selectorTokens[i];
+    }
+
+    APPEND(false, '{');
+
+    for (int p = 0; p < token->data.rule.propertyCount; p++) {
+        const CSSProperty* prop = &token->data.rule.properties[p];
+
+        for (int i = 0; i < prop->nameTokenSize && size < CSS_MAX_TOKENIZABLE; i++)
+            out[size++] = prop->nameTokens[i];
+
+        APPEND(false, ':');
+
+        for (int i = 0; i < prop->valueTokenSize && size < CSS_MAX_TOKENIZABLE; i++)
+            out[size++] = prop->valueTokens[i];
+
+        APPEND(false, ';');
+    }
+
+    APPEND(false, '}');
+
+#undef APPEND
+
+    token->data.rule.ruleTokenSize = size;
+}
+
+/* =========================================================================
+   Req 3 (csscodec) – collectCSSFrequencies / freeCSSFreqMap
+   ========================================================================= */
+
+static int css_freq_cmp(const void* a, const void* b) {
+    return ((const CSSFreqEntry*)b)->frequency -
+           ((const CSSFreqEntry*)a)->frequency;
+}
+
+CSSFreqMap* collectCSSFrequencies(const CSSTokenArray* arr) {
+    if (!arr) return NULL;
+
+    CSSFreqMap* map = (CSSFreqMap*)calloc(1, sizeof(CSSFreqMap));
+    if (!map) return NULL;
+
+    for (int t = 0; t < arr->count; t++) {
+        const CSSToken* tok = &arr->tokens[t];
+        const CSSTokenizable* src = NULL;
+        int srcSize = 0;
+
+        if (tok->type == 0) {
+            src     = tok->data.rule.ruleTokens;
+            srcSize = tok->data.rule.ruleTokenSize;
+        } else if (tok->type == 1) {
+            src     = tok->data.atRule.atRuleTokens;
+            srcSize = tok->data.atRule.atRuleTokenSize;
+        } else {
+            src     = tok->data.comment.commentTokens;
+            srcSize = tok->data.comment.commentTokenSize;
+        }
+
+        for (int i = 0; i < srcSize; i++) {
+            map->totalTokens++;
+            /* find existing entry */
+            int found = -1;
+            for (int e = 0; e < map->uniqueCount; e++) {
+                if (map->entries[e].token.isPattern == src[i].isPattern &&
+                    map->entries[e].token.flag      == src[i].flag) {
+                    found = e;
+                    break;
+                }
+            }
+            if (found >= 0) {
+                map->entries[found].frequency++;
+            } else if (map->uniqueCount < CSS_MAX_UNIQUE_TOKENIZABLE) {
+                map->entries[map->uniqueCount].token = src[i];
+                map->entries[map->uniqueCount].frequency = 1;
+                map->uniqueCount++;
+            }
+        }
+    }
+
+    qsort(map->entries, (size_t)map->uniqueCount,
+          sizeof(CSSFreqEntry), css_freq_cmp);
+
+    return map;
+}
+
+void freeCSSFreqMap(CSSFreqMap* map) {
+    free(map);
 }

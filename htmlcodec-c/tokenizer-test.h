@@ -124,4 +124,17 @@ void test_css_tokenizable_atrule();
 void test_css_pattern_codebook();
 void test_css_tokenizable_comprehensive();
 
+// CSS codec AE tests (csscodec.md)
+void test_css_comment_tokenization();
+void test_css_flatten_rule_tokens();
+void test_css_freqmap_best_case();
+void test_css_freqmap_worst_case();
+void test_css_ae_codec_best_case();
+void test_css_ae_codec_worst_case();
+
+// zlib vs CSS AE benchmark tests
+void test_zlib_compare_css_ae_best_case();
+void test_zlib_compare_css_ae_worst_case();
+void test_zlib_compare_css_ae_long_stylesheet();
+
 #endif // TOKENIZER_TEST_H

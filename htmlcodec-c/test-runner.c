@@ -88,6 +88,19 @@ int main(void) {
     test_zlib_compare_ae_short_message();
     test_zlib_compare_ae_long_text();
 
+    printf("\n--- CSS AE CODEC TESTS ---\n");
+    test_css_comment_tokenization();
+    test_css_flatten_rule_tokens();
+    test_css_freqmap_best_case();
+    test_css_freqmap_worst_case();
+    test_css_ae_codec_best_case();
+    test_css_ae_codec_worst_case();
+
+    printf("\n--- ZLIB VS CSS AE BENCHMARK TESTS ---\n");
+    test_zlib_compare_css_ae_best_case();
+    test_zlib_compare_css_ae_worst_case();
+    test_zlib_compare_css_ae_long_stylesheet();
+
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
 
