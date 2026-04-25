@@ -28,6 +28,10 @@ static unsigned int get_bits(const unsigned char* buf, size_t start, size_t n) {
 
 /* ── Arithmetic-coding helpers ──────────────────────────────────────────── */
 
+/* Renormalization boundaries (identical to nl-en-codec) */
+#define AE_TOP   0x80000000u
+#define AE_QRTR  0x40000000u
+
 static void ae_build_cum_bounds(CSSAESymbol* syms, size_t n) {
     uint32_t total = 0;
     for (size_t i = 0; i < n; i++) total += syms[i].frequency;
@@ -48,6 +52,72 @@ static int ae_find_symbol(const CSSAESymbol* syms, size_t n,
             return (int)i;
     }
     return -1;
+}
+
+static void ae_emit_bit(unsigned char* buf, size_t* bp, unsigned int bit) {
+    set_bit(buf, *bp, (unsigned char)(bit & 1u));
+    (*bp)++;
+}
+
+static void ae_renorm_enc(uint32_t* lo, uint32_t* hi, int* pend,
+                           unsigned char* buf, size_t* bp) {
+    while (1) {
+        if (*hi < AE_TOP) {
+            ae_emit_bit(buf, bp, 0);
+            for (int k = 0; k < *pend; k++) ae_emit_bit(buf, bp, 1);
+            *pend = 0;
+            *lo = *lo << 1;
+            *hi = (*hi << 1) | 1u;
+        } else if (*lo >= AE_TOP) {
+            ae_emit_bit(buf, bp, 1);
+            for (int k = 0; k < *pend; k++) ae_emit_bit(buf, bp, 0);
+            *pend = 0;
+            *lo = (*lo - AE_TOP) << 1;
+            *hi = (*hi - AE_TOP) << 1 | 1u;
+        } else if (*lo >= AE_QRTR && *hi < (AE_TOP | AE_QRTR)) {
+            (*pend)++;
+            *lo = (*lo - AE_QRTR) << 1;
+            *hi = (*hi - AE_QRTR) << 1 | 1u;
+        } else {
+            break;
+        }
+    }
+}
+
+static void ae_flush_enc(uint32_t lo, int pend, unsigned char* buf, size_t* bp) {
+    pend++;
+    if (lo < AE_QRTR) {
+        ae_emit_bit(buf, bp, 0);
+        for (int k = 0; k < pend; k++) ae_emit_bit(buf, bp, 1);
+    } else {
+        ae_emit_bit(buf, bp, 1);
+        for (int k = 0; k < pend; k++) ae_emit_bit(buf, bp, 0);
+    }
+}
+
+static unsigned int ae_read_bit_safe(const unsigned char* buf, size_t pos, size_t total) {
+    return (pos < total) ? (unsigned int)get_bit(buf, pos) : 0u;
+}
+
+static void ae_renorm_dec(uint32_t* lo, uint32_t* hi, uint32_t* code,
+                           const unsigned char* buf, size_t* bp, size_t total) {
+    while (1) {
+        if (*hi < AE_TOP) {
+            *lo   = *lo << 1;
+            *hi   = (*hi << 1) | 1u;
+            *code = (*code << 1) | ae_read_bit_safe(buf, (*bp)++, total);
+        } else if (*lo >= AE_TOP) {
+            *lo   = (*lo - AE_TOP) << 1;
+            *hi   = (*hi - AE_TOP) << 1 | 1u;
+            *code = (*code - AE_TOP) << 1 | ae_read_bit_safe(buf, (*bp)++, total);
+        } else if (*lo >= AE_QRTR && *hi < (AE_TOP | AE_QRTR)) {
+            *lo   = (*lo - AE_QRTR) << 1;
+            *hi   = (*hi - AE_QRTR) << 1 | 1u;
+            *code = (*code - AE_QRTR) << 1 | ae_read_bit_safe(buf, (*bp)++, total);
+        } else {
+            break;
+        }
+    }
 }
 
 /* Count total CSSTokenizables across the whole array */
@@ -95,35 +165,12 @@ unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t* outSize) {
         return NULL;
     }
 
-    /* Arithmetic encode the flat token sequence */
-    uint32_t low  = 0;
-    uint32_t high = CSS_AE_MAX_CODE;
-
-    for (int t = 0; t < arr->count; t++) {
-        const CSSToken* tok = &arr->tokens[t];
-        const CSSTokenizable* src = NULL;
-        int srcSize = 0;
-
-        if (tok->type == 0) { src = tok->data.rule.ruleTokens;       srcSize = tok->data.rule.ruleTokenSize; }
-        else if (tok->type == 1) { src = tok->data.atRule.atRuleTokens; srcSize = tok->data.atRule.atRuleTokenSize; }
-        else { src = tok->data.comment.commentTokens; srcSize = tok->data.comment.commentTokenSize; }
-
-        for (int i = 0; i < srcSize; i++) {
-            int idx = ae_find_symbol(syms, unique, &src[i]);
-            if (idx < 0) { free(syms); return NULL; }
-            uint64_t range = (uint64_t)(high - low) + 1;
-            high = low + (uint32_t)(range * syms[idx].cum_high / CSS_AE_SCALE) - 1;
-            low  = low + (uint32_t)(range * syms[idx].cum_low  / CSS_AE_SCALE);
-        }
-    }
-
-    uint32_t tag_low  = low;
-    uint32_t tag_high = high;
-
-    /* Allocate output buffer (worst case) */
-    /* header: 10 + 11 + unique*22 + 9 + count*12 + 64 */
-    size_t bits_needed = 10 + 11 + unique * 22 + 9 + (size_t)arr->count * 12 + 64;
-    size_t bytes_needed = (bits_needed + 7) / 8;
+    /* Allocate output buffer.
+     * Header: 10 + 11 + unique*22 + 9 + count*12 bits
+     * AE stream: total*32 + 64 bits (conservative upper bound)            */
+    size_t header_bits = 10 + 11 + unique * 22 + 9 + (size_t)arr->count * 12;
+    size_t ae_bits     = total * 32 + 64;
+    size_t bytes_needed = (header_bits + ae_bits + 7) / 8;
     unsigned char* buffer = (unsigned char*)calloc(bytes_needed, 1);
     if (!buffer) { free(syms); return NULL; }
 
@@ -139,7 +186,7 @@ unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t* outSize) {
     for (size_t i = 0; i < unique; i++) {
         if (syms[i].token.isPattern) {
             /* 1 + 11 + 10 = 22 bits */
-            set_bits(buffer, bp,  1, 1u);                              bp += 1;
+            set_bits(buffer, bp,  1, 1u);                               bp += 1;
             set_bits(buffer, bp, 11, (unsigned int)syms[i].token.flag); bp += 11;
             set_bits(buffer, bp, 10, (unsigned int)syms[i].frequency);  bp += 10;
         } else {
@@ -147,7 +194,7 @@ unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t* outSize) {
             unsigned int offset = (syms[i].token.flag >= 32u)
                                   ? (unsigned int)(syms[i].token.flag - 32u) : 0u;
             if (offset > 95u) offset = 95u;
-            set_bits(buffer, bp,  1, 0u);    bp += 1;
+            set_bits(buffer, bp,  1, 0u);     bp += 1;
             set_bits(buffer, bp,  7, offset); bp += 7;
             set_bits(buffer, bp, 10, (unsigned int)syms[i].frequency); bp += 10;
         }
@@ -164,13 +211,36 @@ unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t* outSize) {
         else if (tok->type == 1) tokSize = tok->data.atRule.atRuleTokenSize;
         else                     tokSize = tok->data.comment.commentTokenSize;
 
-        set_bits(buffer, bp, 2, (unsigned int)tok->type); bp += 2;
-        set_bits(buffer, bp, 10, (unsigned int)tokSize);  bp += 10;
+        set_bits(buffer, bp, 2,  (unsigned int)tok->type); bp += 2;
+        set_bits(buffer, bp, 10, (unsigned int)tokSize);   bp += 10;
     }
 
-    /* 64 bits: tag_low (32) + tag_high (32) */
-    set_bits(buffer, bp, 32, (unsigned int)tag_low);  bp += 32;
-    set_bits(buffer, bp, 32, (unsigned int)tag_high); bp += 32;
+    /* AE encode the flat CSSTokenizable sequence with renormalization */
+    uint32_t lo = 0, hi = 0xFFFFFFFFu;
+    int pend = 0;
+
+    for (int t = 0; t < arr->count; t++) {
+        const CSSToken* tok = &arr->tokens[t];
+        const CSSTokenizable* src = NULL;
+        int srcSize = 0;
+
+        if (tok->type == 0) { src = tok->data.rule.ruleTokens;        srcSize = tok->data.rule.ruleTokenSize; }
+        else if (tok->type == 1) { src = tok->data.atRule.atRuleTokens;  srcSize = tok->data.atRule.atRuleTokenSize; }
+        else { src = tok->data.comment.commentTokens; srcSize = tok->data.comment.commentTokenSize; }
+
+        for (int i = 0; i < srcSize; i++) {
+            int idx = ae_find_symbol(syms, unique, &src[i]);
+            if (idx < 0) { free(syms); free(buffer); return NULL; }
+
+            uint64_t range = (uint64_t)(hi - lo) + 1;
+            hi = lo + (uint32_t)(range * syms[idx].cum_high / CSS_AE_SCALE) - 1;
+            lo = lo + (uint32_t)(range * syms[idx].cum_low  / CSS_AE_SCALE);
+
+            ae_renorm_enc(&lo, &hi, &pend, buffer, &bp);
+        }
+    }
+
+    ae_flush_enc(lo, pend, buffer, &bp);
 
     *outSize = (bp + 7) / 8;
     free(syms);
@@ -245,26 +315,25 @@ CSSTokenArray* css_decode_ae(const unsigned char* buffer, size_t bufferSize) {
         sizes[t] = (int)get_bits(buffer, bp, 10); bp += 10;
     }
 
-    /* 64 bits: sequence tag */
-    if (bp + 64 > total_bits) { free(syms); return NULL; }
-    uint32_t tag_low  = (uint32_t)get_bits(buffer, bp, 32); bp += 32;
-    (void)get_bits(buffer, bp, 32); bp += 32;  /* tag_high not needed */
-
     /* Rebuild cumulative probability bounds */
     ae_build_cum_bounds(syms, unique);
 
-    /* Phase 1: arithmetic-decode the flat CSSTokenizable sequence */
+    /* Phase 1: arithmetic-decode the flat CSSTokenizable sequence.
+     * The AE bitstream begins immediately after the per-token metadata.     */
     CSSTokenizable* flat = (CSSTokenizable*)malloc(total * sizeof(CSSTokenizable));
     if (!flat) { free(syms); return NULL; }
 
-    uint32_t code      = tag_low;
-    uint32_t work_low  = 0;
-    uint32_t work_high = CSS_AE_MAX_CODE;
+    /* Initialize code register: first 32 bits MSB-first from AE stream */
+    uint32_t code = 0;
+    for (int i = 31; i >= 0; i--)
+        code |= (uint32_t)ae_read_bit_safe(buffer, bp++, total_bits) << i;
+
+    uint32_t lo = 0, hi = 0xFFFFFFFFu;
     size_t decoded = 0;
 
     for (size_t i = 0; i < total; i++) {
-        uint64_t range  = (uint64_t)(work_high - work_low) + 1;
-        uint32_t scaled = (uint32_t)(((uint64_t)(code - work_low + 1) * CSS_AE_SCALE - 1) / range);
+        uint64_t range  = (uint64_t)(hi - lo) + 1;
+        uint32_t scaled = (uint32_t)(((uint64_t)(code - lo + 1) * CSS_AE_SCALE - 1) / range);
 
         int sym_idx = -1;
         for (size_t j = 0; j < unique; j++) {
@@ -279,8 +348,10 @@ CSSTokenArray* css_decode_ae(const unsigned char* buffer, size_t bufferSize) {
         }
         flat[decoded++] = syms[sym_idx].token;
 
-        work_high = work_low + (uint32_t)(range * syms[sym_idx].cum_high / CSS_AE_SCALE) - 1;
-        work_low  = work_low + (uint32_t)(range * syms[sym_idx].cum_low  / CSS_AE_SCALE);
+        hi = lo + (uint32_t)(range * syms[sym_idx].cum_high / CSS_AE_SCALE) - 1;
+        lo = lo + (uint32_t)(range * syms[sym_idx].cum_low  / CSS_AE_SCALE);
+
+        ae_renorm_dec(&lo, &hi, &code, buffer, &bp, total_bits);
     }
     free(syms);
 

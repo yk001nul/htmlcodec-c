@@ -6,8 +6,7 @@
 #include <stdint.h>
 
 /* ── Arithmetic-coding constants ────────────────────────────────────────── */
-#define NL_AE_SCALE    65536u        /* 2^16 — fixed-point denominator        */
-#define NL_AE_MAX_CODE 0xFFFFFFFFu   /* 32-bit full range                     */
+#define NL_AE_SCALE  65536u   /* 2^16 — fixed-point probability denominator */
 
 /**
  * One entry in the arithmetic-coding symbol table.
@@ -33,7 +32,7 @@ typedef struct {
  *       4 bits bit-length N of the index value (1..9)
  *       N bits index value without leading zeros (1 bit min, 9 bits max for index 511)
  *       2 bits caseStyle
- *   - If isPattern=false: 9 bits (0 + 8 ASCII char bits)
+ *   - If isPattern=false: 8 bits (0 + 7-bit printable offset, flag − 32)
  *
  * @param arr The NLTokenArray to encode
  * @param count The number of tokens to encode (must be <= arr->count)
@@ -59,8 +58,8 @@ NLTokenArray* nl_en_decode(const unsigned char* buffer, size_t bufferSize);
  *   10 bits : number of unique NLTokens in the frequency table
  *   Per unique token (isPattern=true):  1+9+2+10 = 22 bits
  *   Per unique token (isPattern=false): 1+7+10   = 18 bits
- *   32 bits : arithmetic coding lower bound (sequence tag low)
- *   32 bits : arithmetic coding upper bound (sequence tag high)
+ *   Variable : renormalized AE bitstream (E1/E2/E3 bit-emission)
+ *              length is proportional to entropy of the token sequence
  *
  * @param arr     The NLTokenArray to encode
  * @param count   Number of tokens to encode (must be <= arr->count)

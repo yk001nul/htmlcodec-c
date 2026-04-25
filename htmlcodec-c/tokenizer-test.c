@@ -533,7 +533,7 @@ void test_nl_en_codec_worst_case() {
             input.tokens[i].caseStyle = (i % 4); // cycle through all caseStyle values
         } else {
             input.tokens[i].isPattern = false;
-            input.tokens[i].flag = ((i * 7) % 256); // different ASCII values
+            input.tokens[i].flag = (unsigned short)(((i * 7) % 95) + 32); // printable ASCII [32,126]
             input.tokens[i].caseStyle = 0;
         }
     }
@@ -562,7 +562,7 @@ void test_nl_en_codec_worst_case() {
 
     // Check token 1 (odd index -> isPattern = false)
     if (decoded->tokens[1].isPattern != 0 ||
-        decoded->tokens[1].flag != ((1 * 7) % 256)) {
+        decoded->tokens[1].flag != (unsigned short)(((1 * 7) % 95) + 32)) {
         spot_checks_passed = 0;
         printf("  Spot check failed at token 1\n");
     }
@@ -570,7 +570,7 @@ void test_nl_en_codec_worst_case() {
     // Check token at middle (2048, even -> isPattern should be true)
     size_t mid = NL_EN_MAX_TOKENS / 2;
     int mid_isPattern = (mid % 2 == 0) ? 1 : 0;
-    int mid_flag = (mid % 2 == 0) ? (int)(mid % NL_EN_PATTERN_COUNT) : (int)((mid * 7) % 256);
+    int mid_flag = (mid % 2 == 0) ? (int)(mid % NL_EN_PATTERN_COUNT) : (int)(((mid * 7) % 95) + 32);
     int mid_caseStyle = (mid % 2 == 0) ? (int)(mid % 4) : 0;
 
     if (decoded->tokens[mid].isPattern != mid_isPattern ||
@@ -583,7 +583,7 @@ void test_nl_en_codec_worst_case() {
     // Check last token (4095, odd -> isPattern should be false)
     size_t last = NL_EN_MAX_TOKENS - 1;
     int last_isPattern = (last % 2 == 0) ? 1 : 0;
-    int last_flag = (last % 2 == 0) ? (int)(last % NL_EN_PATTERN_COUNT) : (int)((last * 7) % 256);
+    int last_flag = (last % 2 == 0) ? (int)(last % NL_EN_PATTERN_COUNT) : (int)(((last * 7) % 95) + 32);
 
     if (decoded->tokens[last].isPattern != last_isPattern ||
         decoded->tokens[last].flag != last_flag) {
@@ -1900,6 +1900,101 @@ void test_zlib_compare_ae_long_text(void) {
     printf("PASS zlib vs NL-EN AE compare - long professional text\n");
 }
 
+/* ---- zlib vs NL-EN Variable-Width Benchmark Tests ---- */
+
+static void print_vw_benchmark_row(size_t input_len,
+                                   size_t vw_size,
+                                   uLongf zlib_size) {
+    double vw_pct   = (double)vw_size   / (double)input_len * 100.0;
+    double zlib_pct = (double)zlib_size / (double)input_len * 100.0;
+    printf("  Input:            %zu bytes\n", input_len);
+    printf("  NL-EN vw encode:  %zu bytes (%.1f%% of original, %.1f%% reduction)\n",
+           vw_size,   vw_pct,   100.0 - vw_pct);
+    printf("  zlib compress:    %lu bytes (%.1f%% of original, %.1f%% reduction)\n",
+           (unsigned long)zlib_size, zlib_pct, 100.0 - zlib_pct);
+}
+
+/* Same short text as the AE short-message benchmark for direct comparison. */
+void test_zlib_compare_vw_short_message(void) {
+    const char* text = "Hello, how are you doing today?";
+
+    size_t input_len = strlen(text);
+
+    NLTokenArray* tokens = tokenizeEnglish(text);
+    assert_true(tokens != NULL, "vw benchmark short: tokenize should succeed");
+    assert_true(tokens->count > 0, "vw benchmark short: should produce tokens");
+
+    size_t vw_size = 0;
+    unsigned char* vw_encoded = nl_en_encode(tokens, tokens->count, &vw_size);
+    assert_true(vw_encoded != NULL, "vw benchmark short: encode should succeed");
+    assert_true(vw_size > 0,        "vw benchmark short: encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "vw benchmark short: malloc for zlib buffer should succeed");
+
+    int zlib_result = compress(zlib_dest, &zlib_dest_len,
+                               (const Bytef*)text, (uLong)input_len);
+    assert_true(zlib_result == Z_OK, "vw benchmark short: zlib compress should return Z_OK");
+    assert_true(zlib_dest_len > 0,   "vw benchmark short: zlib compressed size > 0");
+
+    print_vw_benchmark_row(input_len, vw_size, zlib_dest_len);
+
+    free(vw_encoded);
+    free(zlib_dest);
+    freeNLTokenArray(tokens);
+    printf("PASS zlib vs NL-EN vw compare - short English message\n");
+}
+
+/* Same long text as the AE long-text benchmark for direct comparison. */
+void test_zlib_compare_vw_long_text(void) {
+    const char* text =
+        "The rapid advancement of machine learning has fundamentally altered how "
+        "engineers approach software design and system architecture. Distributed "
+        "computation frameworks, once reserved for large research institutions, are "
+        "now accessible to small teams building production systems at scale.\n\n"
+        "Effective compression techniques reduce bandwidth consumption and storage "
+        "costs across every layer of the stack. General-purpose algorithms such as "
+        "deflate offer broad applicability, while domain-specific codecs exploit "
+        "structural knowledge of the target data to achieve superior ratios on "
+        "their intended content class. Both approaches occupy important roles in "
+        "modern infrastructure, often working in combination.\n\n"
+        "Arithmetic coding assigns each symbol a probability-weighted sub-interval "
+        "of the unit interval, encoding an entire sequence as a single fractional "
+        "number. Compared with Huffman coding, it achieves entropy more closely "
+        "when symbol probabilities are skewed and avoids the one-bit-per-symbol "
+        "floor that limits fixed-length prefix codes. The practical trade-off is "
+        "higher implementation complexity and sensitivity to precision in the "
+        "underlying integer arithmetic.";
+
+    size_t input_len = strlen(text);
+
+    NLTokenArray* tokens = tokenizeEnglish(text);
+    assert_true(tokens != NULL, "vw benchmark long: tokenize should succeed");
+    assert_true(tokens->count > 0, "vw benchmark long: should produce tokens");
+
+    size_t vw_size = 0;
+    unsigned char* vw_encoded = nl_en_encode(tokens, tokens->count, &vw_size);
+    assert_true(vw_encoded != NULL, "vw benchmark long: encode should succeed");
+    assert_true(vw_size > 0,        "vw benchmark long: encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "vw benchmark long: malloc for zlib buffer should succeed");
+
+    int zlib_result = compress(zlib_dest, &zlib_dest_len,
+                               (const Bytef*)text, (uLong)input_len);
+    assert_true(zlib_result == Z_OK, "vw benchmark long: zlib compress should return Z_OK");
+    assert_true(zlib_dest_len > 0,   "vw benchmark long: zlib compressed size > 0");
+
+    print_vw_benchmark_row(input_len, vw_size, zlib_dest_len);
+
+    free(vw_encoded);
+    free(zlib_dest);
+    freeNLTokenArray(tokens);
+    printf("PASS zlib vs NL-EN vw compare - long professional text\n");
+}
+
 /* =========================================================================
    CSS Codec AE tests
    ========================================================================= */
@@ -2257,4 +2352,125 @@ void test_zlib_compare_css_ae_long_stylesheet(void) {
     free(zlib_dest);
     free(arr);
     printf("PASS zlib vs CSS AE compare - long stylesheet\n");
+}
+
+/* ── Renormalization round-trip tests ────────────────────────────────────── */
+
+/* NL-EN AE: encode/decode a 30+ token sequence that previously collapsed
+   with fixed-point 32-bit AE (no renormalization).  Verifies that the
+   renormalized codec produces a lossless round-trip for long inputs.        */
+void test_nl_en_ae_codec_long_sequence(void) {
+    /* Two repetitions of a sentence give enough token diversity and count
+       to guarantee collapse under the old fixed-tag approach while staying
+       fast in this unit test.                                               */
+    const char* text =
+        "the quick brown fox jumps over the lazy dog "
+        "the quick brown fox jumps over the lazy dog";
+
+    NLTokenArray* original = tokenizeEnglish(text);
+    assert_true(original != NULL, "NL AE long: tokenize non-NULL");
+    if (!original) return;
+
+    assert_true((int)original->count >= 20,
+                "NL AE long: at least 20 tokens (enough to stress precision)");
+
+    size_t encoded_size = 0;
+    unsigned char* encoded = nl_en_encode_ae(original, original->count, &encoded_size);
+    assert_true(encoded != NULL,    "NL AE long: encoded non-NULL");
+    assert_true(encoded_size > 0,   "NL AE long: encoded size > 0");
+    if (!encoded) { freeNLTokenArray(original); return; }
+
+    NLTokenArray* decoded = nl_en_decode_ae(encoded, encoded_size);
+    assert_true(decoded != NULL, "NL AE long: decoded non-NULL");
+    if (!decoded) { free(encoded); freeNLTokenArray(original); return; }
+
+    assert_equal_int((int)decoded->count, (int)original->count,
+                     "NL AE long: decoded count matches original");
+
+    if (decoded->count == original->count) {
+        bool all_match = true;
+        for (size_t i = 0; i < original->count; i++) {
+            if (decoded->tokens[i].isPattern != original->tokens[i].isPattern ||
+                decoded->tokens[i].flag      != original->tokens[i].flag) {
+                all_match = false;
+                break;
+            }
+            if (original->tokens[i].isPattern &&
+                decoded->tokens[i].caseStyle != original->tokens[i].caseStyle) {
+                all_match = false;
+                break;
+            }
+        }
+        assert_true(all_match, "NL AE long: all decoded tokens match original");
+    }
+
+    printf("PASS NL-EN AE codec - long sequence (%zu tokens, %zu bytes encoded)\n",
+           original->count, encoded_size);
+
+    free(encoded);
+    freeNLTokenArray(decoded);
+    freeNLTokenArray(original);
+}
+
+/* CSS AE: encode/decode a rule with 6 properties — 30+ ruleTokenizables.
+   Previously failed due to precision collapse; should now round-trip
+   correctly with renormalization.                                           */
+void test_css_ae_codec_long_rule(void) {
+    const char* css =
+        "section { display: flex; flex-direction: column; "
+        "align-items: center; justify-content: center; "
+        "background-color: white; color: black; }";
+
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS AE long rule: alloc");
+    if (!arr) return;
+
+    parseCSS(css, arr);
+    assert_true(arr->count > 0, "CSS AE long rule: parseCSS produced tokens");
+    if (arr->count == 0) { free(arr); return; }
+
+    /* Confirm the rule has the expected properties */
+    CSSToken* rule = &arr->tokens[0];
+    assert_true(rule->type == 0, "CSS AE long rule: type is rule");
+    assert_true(rule->data.rule.propertyCount == 6,
+                "CSS AE long rule: 6 properties parsed");
+    assert_true(rule->data.rule.ruleTokenSize >= 20,
+                "CSS AE long rule: ruleTokenSize >= 20 (exercises renorm)");
+
+    size_t ae_size = 0;
+    unsigned char* ae_encoded = css_encode_ae(arr, &ae_size);
+    assert_true(ae_encoded != NULL, "CSS AE long rule: encoded non-NULL");
+    assert_true(ae_size > 0,        "CSS AE long rule: encoded size > 0");
+    if (!ae_encoded) { free(arr); return; }
+
+    CSSTokenArray* decoded = css_decode_ae(ae_encoded, ae_size);
+    assert_true(decoded != NULL, "CSS AE long rule: decoded non-NULL");
+    if (!decoded) { free(ae_encoded); free(arr); return; }
+
+    assert_equal_int(decoded->count, arr->count,
+                     "CSS AE long rule: decoded token count matches");
+
+    if (decoded->count > 0 && arr->count > 0) {
+        CSSToken* dr = &decoded->tokens[0];
+        assert_equal_int(dr->type, 0,
+                         "CSS AE long rule: decoded type is rule");
+        assert_equal_int(dr->data.rule.propertyCount,
+                         rule->data.rule.propertyCount,
+                         "CSS AE long rule: propertyCount round-trips");
+        assert_equal_int(dr->data.rule.selectorTokenSize,
+                         rule->data.rule.selectorTokenSize,
+                         "CSS AE long rule: selectorTokenSize round-trips");
+        assert_equal_int(dr->data.rule.ruleTokenSize,
+                         rule->data.rule.ruleTokenSize,
+                         "CSS AE long rule: ruleTokenSize round-trips");
+    }
+
+    printf("PASS CSS AE codec - long rule (%d ruleTokens, %d properties, %zu bytes encoded)\n",
+           rule->data.rule.ruleTokenSize,
+           rule->data.rule.propertyCount,
+           ae_size);
+
+    free(ae_encoded);
+    free(decoded);
+    free(arr);
 }
