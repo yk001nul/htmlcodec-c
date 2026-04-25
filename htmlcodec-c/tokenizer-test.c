@@ -2182,3 +2182,79 @@ void test_zlib_compare_css_ae_worst_case(void) {
     free(arr);
     printf("PASS zlib vs CSS AE compare - worst case (all-unique tokens)\n");
 }
+
+/* Long stylesheet: a realistic CSS file representative of a small webpage.
+   The total CSSTokenizable count (several hundred) far exceeds the 32-bit
+   fixed-point precision limit of the AE codec, so the encoded output is
+   structurally valid but would not decode correctly.  The test is a pure
+   size benchmark — it reports how the codec's output compares to zlib on
+   the raw CSS bytes.                                                        */
+void test_zlib_compare_css_ae_long_stylesheet(void) {
+    const char* css =
+        "/* reset */\n"
+        "* { box-sizing: border-box; margin: 0; padding: 0; }\n"
+        "/* base */\n"
+        "body { font-family: sans-serif; font-size: 16px; line-height: 1.6; color: #333; background: white; }\n"
+        "h1 { font-size: 2rem; font-weight: bold; color: #111; margin-bottom: 16px; }\n"
+        "h2 { font-size: 1.5rem; font-weight: bold; color: #222; margin-bottom: 12px; }\n"
+        "p { margin-bottom: 16px; }\n"
+        "a { color: blue; text-decoration: underline; }\n"
+        "a:hover { color: darkblue; text-decoration: none; }\n"
+        "img { display: block; max-width: 100%; height: auto; }\n"
+        "/* layout */\n"
+        "header { display: flex; justify-content: space-between; align-items: center;"
+        " padding: 16px 24px; background: white; border-bottom: 1px solid #ddd; }\n"
+        "nav a { color: #333; text-decoration: none; font-weight: bold; }\n"
+        "main { max-width: 960px; margin: 0 auto; padding: 32px 16px; }\n"
+        "footer { background: #222; color: white; text-align: center; padding: 24px; }\n"
+        "/* hero */\n"
+        ".hero { background: #4f46e5; color: white; text-align: center; padding: 64px 24px; }\n"
+        ".hero h1 { font-size: 3rem; margin-bottom: 24px; }\n"
+        "/* card */\n"
+        ".card { background: white; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px #0001; }\n"
+        "/* button */\n"
+        "button { display: inline; padding: 10px 20px; background: blue; color: white;"
+        " border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }\n"
+        "button:hover { background: darkblue; }\n"
+        "/* responsive */\n"
+        "@media (max-width: 768px) { }\n";
+
+    size_t input_len = strlen(css);
+
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS AE long: alloc");
+    parseCSS(css, arr);
+    assert_true(arr->count > 0, "CSS AE long: parsed token count > 0");
+
+    /* Count total CSSTokenizables across all tokens */
+    int total_tokenizables = 0;
+    for (int t = 0; t < arr->count; t++) {
+        const CSSToken* tok = &arr->tokens[t];
+        if      (tok->type == 0) total_tokenizables += tok->data.rule.ruleTokenSize;
+        else if (tok->type == 1) total_tokenizables += tok->data.atRule.atRuleTokenSize;
+        else                     total_tokenizables += tok->data.comment.commentTokenSize;
+    }
+
+    size_t ae_size = 0;
+    unsigned char* ae_encoded = css_encode_ae(arr, &ae_size);
+    assert_true(ae_encoded != NULL, "CSS AE long: encode non-NULL");
+    assert_true(ae_size > 0,        "CSS AE long: encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "CSS AE long: malloc for zlib buffer");
+
+    int zlib_result = compress(zlib_dest, &zlib_dest_len,
+                               (const Bytef*)css, (uLong)input_len);
+    assert_true(zlib_result == Z_OK, "CSS AE long: zlib compress Z_OK");
+    assert_true(zlib_dest_len > 0,   "CSS AE long: zlib size > 0");
+
+    printf("  CSS tokens:      %d rules/at-rules/comments, %d total CSSTokenizables\n",
+           arr->count, total_tokenizables);
+    print_css_ae_benchmark_row(input_len, ae_size, zlib_dest_len);
+
+    free(ae_encoded);
+    free(zlib_dest);
+    free(arr);
+    printf("PASS zlib vs CSS AE compare - long stylesheet\n");
+}

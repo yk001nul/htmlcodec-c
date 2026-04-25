@@ -97,8 +97,11 @@ Two benchmark tests compare `css_encode_ae` output size against zlib applied to 
 |------|-----------|:---:|:---:|--------|------|
 | Best  | `body { color: red; color: red; }` (32 B) | 11 | 7 | ~31 B | ~29 B |
 | Worst | `a:hover { font-size: 2em; }` (27 B)       | 10 | 10 | ~38 B | ~35 B |
+| Long  | realistic small-webpage stylesheet (1382 B) | 528 across 25 tokens | ~70 | ~282 B | ~563 B |
 
 Best case uses heavy token repetition (7 unique / 11 total); the frequency table pays off and AE approaches zlib. Worst case has no repetition (10 unique / 10 total); both methods expand the tiny input, but AE is slightly larger due to the per-symbol table overhead.
+
+The long stylesheet result (CSS AE ~282 B vs zlib ~563 B) is **not** genuinely lossless compression — the 528-token sequence far exceeds the 32-bit precision limit, so the arithmetic interval collapses and the stored tag no longer reproduces the original sequence. The small output size is an artefact: the dominant cost is the compact codebook-indexed frequency table (~70 unique symbols × 20 bits each) plus the 25-token structural metadata, while the frozen 64-bit sequence tag contributes negligible payload. This illustrates the codec's structural overhead profile rather than its coding gain.
 
 ### Test Structure
 

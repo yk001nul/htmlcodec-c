@@ -99,6 +99,7 @@ int main(void) {
     printf("\n--- ZLIB VS CSS AE BENCHMARK TESTS ---\n");
     test_zlib_compare_css_ae_best_case();
     test_zlib_compare_css_ae_worst_case();
+    test_zlib_compare_css_ae_long_stylesheet();
 
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
