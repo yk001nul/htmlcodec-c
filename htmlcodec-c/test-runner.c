@@ -89,6 +89,10 @@ int main(void) {
     test_zlib_compare_ae_short_message();
     test_zlib_compare_ae_long_text();
 
+    printf("\n--- ZLIB VS NL-EN VARIABLE-WIDTH BENCHMARK TESTS ---\n");
+    test_zlib_compare_vw_short_message();
+    test_zlib_compare_vw_long_text();
+
     printf("\n--- CSS AE CODEC TESTS ---\n");
     test_css_ae_codec_long_rule();
     test_css_comment_tokenization();

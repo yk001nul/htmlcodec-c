@@ -1900,6 +1900,101 @@ void test_zlib_compare_ae_long_text(void) {
     printf("PASS zlib vs NL-EN AE compare - long professional text\n");
 }
 
+/* ---- zlib vs NL-EN Variable-Width Benchmark Tests ---- */
+
+static void print_vw_benchmark_row(size_t input_len,
+                                   size_t vw_size,
+                                   uLongf zlib_size) {
+    double vw_pct   = (double)vw_size   / (double)input_len * 100.0;
+    double zlib_pct = (double)zlib_size / (double)input_len * 100.0;
+    printf("  Input:            %zu bytes\n", input_len);
+    printf("  NL-EN vw encode:  %zu bytes (%.1f%% of original, %.1f%% reduction)\n",
+           vw_size,   vw_pct,   100.0 - vw_pct);
+    printf("  zlib compress:    %lu bytes (%.1f%% of original, %.1f%% reduction)\n",
+           (unsigned long)zlib_size, zlib_pct, 100.0 - zlib_pct);
+}
+
+/* Same short text as the AE short-message benchmark for direct comparison. */
+void test_zlib_compare_vw_short_message(void) {
+    const char* text = "Hello, how are you doing today?";
+
+    size_t input_len = strlen(text);
+
+    NLTokenArray* tokens = tokenizeEnglish(text);
+    assert_true(tokens != NULL, "vw benchmark short: tokenize should succeed");
+    assert_true(tokens->count > 0, "vw benchmark short: should produce tokens");
+
+    size_t vw_size = 0;
+    unsigned char* vw_encoded = nl_en_encode(tokens, tokens->count, &vw_size);
+    assert_true(vw_encoded != NULL, "vw benchmark short: encode should succeed");
+    assert_true(vw_size > 0,        "vw benchmark short: encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "vw benchmark short: malloc for zlib buffer should succeed");
+
+    int zlib_result = compress(zlib_dest, &zlib_dest_len,
+                               (const Bytef*)text, (uLong)input_len);
+    assert_true(zlib_result == Z_OK, "vw benchmark short: zlib compress should return Z_OK");
+    assert_true(zlib_dest_len > 0,   "vw benchmark short: zlib compressed size > 0");
+
+    print_vw_benchmark_row(input_len, vw_size, zlib_dest_len);
+
+    free(vw_encoded);
+    free(zlib_dest);
+    freeNLTokenArray(tokens);
+    printf("PASS zlib vs NL-EN vw compare - short English message\n");
+}
+
+/* Same long text as the AE long-text benchmark for direct comparison. */
+void test_zlib_compare_vw_long_text(void) {
+    const char* text =
+        "The rapid advancement of machine learning has fundamentally altered how "
+        "engineers approach software design and system architecture. Distributed "
+        "computation frameworks, once reserved for large research institutions, are "
+        "now accessible to small teams building production systems at scale.\n\n"
+        "Effective compression techniques reduce bandwidth consumption and storage "
+        "costs across every layer of the stack. General-purpose algorithms such as "
+        "deflate offer broad applicability, while domain-specific codecs exploit "
+        "structural knowledge of the target data to achieve superior ratios on "
+        "their intended content class. Both approaches occupy important roles in "
+        "modern infrastructure, often working in combination.\n\n"
+        "Arithmetic coding assigns each symbol a probability-weighted sub-interval "
+        "of the unit interval, encoding an entire sequence as a single fractional "
+        "number. Compared with Huffman coding, it achieves entropy more closely "
+        "when symbol probabilities are skewed and avoids the one-bit-per-symbol "
+        "floor that limits fixed-length prefix codes. The practical trade-off is "
+        "higher implementation complexity and sensitivity to precision in the "
+        "underlying integer arithmetic.";
+
+    size_t input_len = strlen(text);
+
+    NLTokenArray* tokens = tokenizeEnglish(text);
+    assert_true(tokens != NULL, "vw benchmark long: tokenize should succeed");
+    assert_true(tokens->count > 0, "vw benchmark long: should produce tokens");
+
+    size_t vw_size = 0;
+    unsigned char* vw_encoded = nl_en_encode(tokens, tokens->count, &vw_size);
+    assert_true(vw_encoded != NULL, "vw benchmark long: encode should succeed");
+    assert_true(vw_size > 0,        "vw benchmark long: encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "vw benchmark long: malloc for zlib buffer should succeed");
+
+    int zlib_result = compress(zlib_dest, &zlib_dest_len,
+                               (const Bytef*)text, (uLong)input_len);
+    assert_true(zlib_result == Z_OK, "vw benchmark long: zlib compress should return Z_OK");
+    assert_true(zlib_dest_len > 0,   "vw benchmark long: zlib compressed size > 0");
+
+    print_vw_benchmark_row(input_len, vw_size, zlib_dest_len);
+
+    free(vw_encoded);
+    free(zlib_dest);
+    freeNLTokenArray(tokens);
+    printf("PASS zlib vs NL-EN vw compare - long professional text\n");
+}
+
 /* =========================================================================
    CSS Codec AE tests
    ========================================================================= */
