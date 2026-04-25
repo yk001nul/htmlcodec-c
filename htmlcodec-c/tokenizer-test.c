@@ -533,7 +533,7 @@ void test_nl_en_codec_worst_case() {
             input.tokens[i].caseStyle = (i % 4); // cycle through all caseStyle values
         } else {
             input.tokens[i].isPattern = false;
-            input.tokens[i].flag = ((i * 7) % 256); // different ASCII values
+            input.tokens[i].flag = (unsigned short)(((i * 7) % 95) + 32); // printable ASCII [32,126]
             input.tokens[i].caseStyle = 0;
         }
     }
@@ -562,7 +562,7 @@ void test_nl_en_codec_worst_case() {
 
     // Check token 1 (odd index -> isPattern = false)
     if (decoded->tokens[1].isPattern != 0 ||
-        decoded->tokens[1].flag != ((1 * 7) % 256)) {
+        decoded->tokens[1].flag != (unsigned short)(((1 * 7) % 95) + 32)) {
         spot_checks_passed = 0;
         printf("  Spot check failed at token 1\n");
     }
@@ -570,7 +570,7 @@ void test_nl_en_codec_worst_case() {
     // Check token at middle (2048, even -> isPattern should be true)
     size_t mid = NL_EN_MAX_TOKENS / 2;
     int mid_isPattern = (mid % 2 == 0) ? 1 : 0;
-    int mid_flag = (mid % 2 == 0) ? (int)(mid % NL_EN_PATTERN_COUNT) : (int)((mid * 7) % 256);
+    int mid_flag = (mid % 2 == 0) ? (int)(mid % NL_EN_PATTERN_COUNT) : (int)(((mid * 7) % 95) + 32);
     int mid_caseStyle = (mid % 2 == 0) ? (int)(mid % 4) : 0;
 
     if (decoded->tokens[mid].isPattern != mid_isPattern ||
@@ -583,7 +583,7 @@ void test_nl_en_codec_worst_case() {
     // Check last token (4095, odd -> isPattern should be false)
     size_t last = NL_EN_MAX_TOKENS - 1;
     int last_isPattern = (last % 2 == 0) ? 1 : 0;
-    int last_flag = (last % 2 == 0) ? (int)(last % NL_EN_PATTERN_COUNT) : (int)((last * 7) % 256);
+    int last_flag = (last % 2 == 0) ? (int)(last % NL_EN_PATTERN_COUNT) : (int)(((last * 7) % 95) + 32);
 
     if (decoded->tokens[last].isPattern != last_isPattern ||
         decoded->tokens[last].flag != last_flag) {

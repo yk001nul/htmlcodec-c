@@ -56,7 +56,7 @@ Binary stream structure:
 - Header: 13 bits for token count
 - Per token:
   - Pattern match: `1` (1 bit) + bit-length N (4 bits) + index value (N bits, 1–9) + case style (2 bits) = 8–16 bits variable
-  - Raw ASCII: `0` (1 bit) + char (8 bits) = 9 bits fixed
+  - Raw ASCII: `0` (1 bit) + printable offset (7 bits, `flag − 32`, range [32, 126]) = 8 bits fixed
 
 The bit-length N is the number of significant bits in the pattern index (no leading zeros; minimum 1). Index 0 encodes as N=1, bit="0". Index 511 encodes as N=9, bits="111111111".
 

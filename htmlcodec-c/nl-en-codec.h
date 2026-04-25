@@ -32,7 +32,7 @@ typedef struct {
  *       4 bits bit-length N of the index value (1..9)
  *       N bits index value without leading zeros (1 bit min, 9 bits max for index 511)
  *       2 bits caseStyle
- *   - If isPattern=false: 9 bits (0 + 8 ASCII char bits)
+ *   - If isPattern=false: 8 bits (0 + 7-bit printable offset, flag − 32)
  *
  * @param arr The NLTokenArray to encode
  * @param count The number of tokens to encode (must be <= arr->count)

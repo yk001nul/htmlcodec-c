@@ -67,7 +67,7 @@ static unsigned int bit_width_of(unsigned short value) {
  *
  * Per token worst case:
  *   Pattern token:  1 (isPattern) + 4 (bitLength) + 9 (max index bits for 512 patterns) + 2 (caseStyle) = 16 bits
- *   ASCII token:    1 (isPattern) + 8 (char) = 9 bits
+ *   ASCII token:    1 (isPattern) + 7 (printable offset, flag − 32) = 8 bits
  * We use 16 bits per token as the worst-case allocation.
  */
 static size_t calculate_buffer_size_bits(size_t token_count) {
@@ -127,15 +127,18 @@ unsigned char* nl_en_encode(const NLTokenArray* arr, size_t count, size_t* outSi
             set_bits(buffer, current_bit, 2, (unsigned int)token->caseStyle);  // caseStyle
             current_bit += 2;
         } else {
-            // Fixed 9-bit ASCII token:
+            // Fixed 8-bit ASCII token (printable range):
             //   1 bit:  isPattern = 0
-            //   8 bits: ASCII char value
+            //   7 bits: ASCII char - 32 (offset into printable ASCII [32, 126])
+            unsigned int offset = (token->flag >= 32u) ?
+                                  (unsigned int)(token->flag - 32u) : 0u;
+            if (offset > 94u) offset = 94u;
 
             set_bits(buffer, current_bit, 1, 0U);         // isPattern = 0
             current_bit += 1;
 
-            set_bits(buffer, current_bit, 8, (unsigned int)token->flag);   // char
-            current_bit += 8;
+            set_bits(buffer, current_bit, 7, offset);     // printable offset
+            current_bit += 7;
         }
     }
 
@@ -221,16 +224,16 @@ NLTokenArray* nl_en_decode(const unsigned char* buffer, size_t bufferSize) {
             token->flag = (unsigned short)flag;
             token->caseStyle = (int)caseStyle;
         } else {
-            // Read 8 bits: ASCII char
-            if (current_bit + 8 > total_bits) {
+            // Read 7 bits: printable ASCII offset (add 32 to recover char)
+            if (current_bit + 7 > total_bits) {
                 arr->count = read_count;
                 break;
             }
-            unsigned int flag = get_bits(buffer, current_bit, 8);
-            current_bit += 8;
+            unsigned int offset = get_bits(buffer, current_bit, 7);
+            current_bit += 7;
 
             token->isPattern = false;
-            token->flag = (unsigned short)flag;
+            token->flag = (unsigned short)(offset + 32u);
             token->caseStyle = 0;
         }
 
