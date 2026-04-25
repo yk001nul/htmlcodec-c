@@ -32,6 +32,7 @@ FetchContent_MakeAvailable(zlib)
 add_library(htmlcodec-c-lib STATIC
     html-tokenizer.c
     css-tokenizer.c
+    css-codec.c
     nl-en-tokenizer.c
     nl-en-codec.c
     cl-javascript-en-tokenizer.c

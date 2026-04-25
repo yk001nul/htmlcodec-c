@@ -12,6 +12,7 @@
 #define CSS_MAX_PROPERTY_VALUE  512
 #define CSS_MAX_PROPERTIES      16
 #define CSS_MAX_TOKENIZABLE     1024
+#define CSS_MAX_UNIQUE_TOKENIZABLE 1464  /* 1208 patterns + 256 ASCII */
 
 /* Codebook: flat array of all known CSS patterns across 11 segments.
    Segment boundary start indices are exposed below.                   */
@@ -64,6 +65,9 @@ typedef struct {
             /* Req 4 */
             CSSTokenizable selectorTokens[CSS_MAX_TOKENIZABLE];
             int selectorTokenSize;
+            /* Req 2 (csscodec): flattened token stream for the whole rule */
+            CSSTokenizable ruleTokens[CSS_MAX_TOKENIZABLE];
+            int ruleTokenSize;
         } rule;
         struct {
             char rule[CSS_MAX_SELECTOR_LEN];
@@ -73,6 +77,9 @@ typedef struct {
         } atRule;
         struct {
             char content[CSS_MAX_PROPERTY_VALUE];
+            /* Req 1 (csscodec): character-level tokenization of comment text */
+            CSSTokenizable commentTokens[CSS_MAX_TOKENIZABLE];
+            int commentTokenSize;
         } comment;
     } data;
 } CSSToken;
@@ -84,5 +91,30 @@ typedef struct {
 
 void parseCSS(const char* css, CSSTokenArray* result);
 void freeCSS(CSSTokenArray* arr);
+
+/* Req 2 (csscodec): flatten selectorTokens + property name/value tokens of a
+   type-0 CSSToken into token->data.rule.ruleTokens, inserting ASCII boundary
+   sentinels ('{', ':', ';', '}') between sections.                          */
+void css_flatten_rule_tokens(CSSToken* token);
+
+/* Req 3 (csscodec): frequency map ---------------------------------------- */
+
+typedef struct {
+    CSSTokenizable token;
+    int            frequency;
+} CSSFreqEntry;
+
+typedef struct {
+    CSSFreqEntry entries[CSS_MAX_UNIQUE_TOKENIZABLE];
+    int          uniqueCount;
+    int          totalTokens;
+} CSSFreqMap;
+
+/* Build a frequency map from all CSSTokenizable data in arr.
+   For type-0 tokens uses ruleTokens; type-1 uses atRuleTokens;
+   type-2 uses commentTokens.  Returns heap-allocated map sorted
+   descending by frequency; caller must call freeCSSFreqMap().   */
+CSSFreqMap* collectCSSFrequencies(const CSSTokenArray* arr);
+void        freeCSSFreqMap(CSSFreqMap* map);
 
 #endif /* CSS_TOKENIZER_H */

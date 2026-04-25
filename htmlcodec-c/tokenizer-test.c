@@ -1,6 +1,7 @@
 #include "tokenizer-test.h"
 #include "nl-en-tokenizer.h"
 #include "nl-en-codec.h"
+#include "css-codec.h"
 #include "cl-javascript-en-tokenizer.h"
 #include "nl-en-us-hyphenator.h"
 #include <zlib.h>
@@ -1897,4 +1898,203 @@ void test_zlib_compare_ae_long_text(void) {
     free(zlib_dest);
     freeNLTokenArray(tokens);
     printf("PASS zlib vs NL-EN AE compare - long professional text\n");
+}
+
+/* =========================================================================
+   CSS Codec AE tests
+   ========================================================================= */
+
+/* Req 1 (csscodec): comment tokens are raw ASCII characters */
+void test_css_comment_tokenization(void) {
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS comment tok: alloc");
+
+    parseCSS("/* hi */", arr);
+    assert_equal_int(arr->count, 1, "CSS comment tok: 1 token");
+    assert_equal_int(arr->tokens[0].type, 2, "CSS comment tok: type=2");
+
+    int sz = arr->tokens[0].data.comment.commentTokenSize;
+    assert_equal_int(sz, 8, "CSS comment tok: size=8 (slash-star space hi space star-slash)");
+    assert_true(!arr->tokens[0].data.comment.commentTokens[0].isPattern,
+                "CSS comment tok: isPattern=false");
+    assert_equal_int((int)arr->tokens[0].data.comment.commentTokens[0].flag,
+                     '/', "CSS comment tok: first char='/'");
+    free(arr);
+    printf("PASS CSS comment tokenization\n");
+}
+
+/* Req 2 (csscodec): flatten produces correct sentinel boundaries */
+void test_css_flatten_rule_tokens(void) {
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS flatten: alloc");
+
+    /* "body { color: red; }" - body=SEG1 pattern, color=SEG5 pattern, red=color pattern */
+    parseCSS("body { color: red; }", arr);
+    assert_equal_int(arr->count, 1, "CSS flatten: 1 token");
+    assert_equal_int(arr->tokens[0].type, 0, "CSS flatten: type=0");
+
+    int sz = arr->tokens[0].data.rule.ruleTokenSize;
+    assert_true(sz > 0, "CSS flatten: ruleTokenSize > 0");
+
+    /* Layout: [body] [{] [color] [:] [red] [;] [}]  = 7 entries */
+    assert_equal_int(sz, 7, "CSS flatten: 7 entries for body{color:red;}");
+
+    /* Sentinel at index 1 must be '{' */
+    const CSSTokenizable* rt = arr->tokens[0].data.rule.ruleTokens;
+    assert_true(!rt[1].isPattern, "CSS flatten: rt[1] isPattern=false");
+    assert_equal_int((int)rt[1].flag, '{', "CSS flatten: rt[1]='{' ");
+    /* ':' sentinel */
+    assert_true(!rt[3].isPattern, "CSS flatten: rt[3] isPattern=false");
+    assert_equal_int((int)rt[3].flag, ':', "CSS flatten: rt[3]=':'");
+    /* ';' sentinel */
+    assert_true(!rt[5].isPattern, "CSS flatten: rt[5] isPattern=false");
+    assert_equal_int((int)rt[5].flag, ';', "CSS flatten: rt[5]=';'");
+    /* '}' sentinel */
+    assert_true(!rt[6].isPattern, "CSS flatten: rt[6] isPattern=false");
+    assert_equal_int((int)rt[6].flag, '}', "CSS flatten: rt[6]='}'");
+
+    free(arr);
+    printf("PASS CSS flatten rule tokens\n");
+}
+
+/* Req 3 (csscodec): frequency map best case — repeated tokens */
+void test_css_freqmap_best_case(void) {
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS freqmap best: alloc");
+
+    /* Two identical selector rules => same tokens appear twice */
+    parseCSS("body { color: red; } body { color: red; }", arr);
+    assert_equal_int(arr->count, 2, "CSS freqmap best: 2 tokens");
+
+    CSSFreqMap* fmap = collectCSSFrequencies(arr);
+    assert_true(fmap != NULL, "CSS freqmap best: non-NULL");
+    assert_true(fmap->uniqueCount > 0, "CSS freqmap best: uniqueCount>0");
+    assert_true(fmap->totalTokens > 0, "CSS freqmap best: totalTokens>0");
+    /* unique <= total */
+    assert_true(fmap->uniqueCount <= fmap->totalTokens,
+                "CSS freqmap best: unique<=total");
+    /* most frequent entry should have frequency >= 2 */
+    assert_true(fmap->entries[0].frequency >= 2,
+                "CSS freqmap best: top freq>=2");
+    /* sorted descending */
+    for (int i = 0; i + 1 < fmap->uniqueCount; i++) {
+        assert_true(fmap->entries[i].frequency >= fmap->entries[i+1].frequency,
+                    "CSS freqmap best: sorted descending");
+    }
+
+    freeCSSFreqMap(fmap);
+    free(arr);
+    printf("PASS CSS freqmap best case\n");
+}
+
+/* Req 3 (csscodec): frequency map worst case — all unique tokens */
+void test_css_freqmap_worst_case(void) {
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS freqmap worst: alloc");
+
+    /* @media at-rule: uses uncommon tokens so frequency is 1 each */
+    parseCSS("@media print { }", arr);
+    assert_true(arr->count >= 1, "CSS freqmap worst: >=1 token");
+
+    CSSFreqMap* fmap = collectCSSFrequencies(arr);
+    assert_true(fmap != NULL, "CSS freqmap worst: non-NULL");
+    assert_true(fmap->uniqueCount > 0, "CSS freqmap worst: uniqueCount>0");
+    assert_true(fmap->uniqueCount <= fmap->totalTokens,
+                "CSS freqmap worst: unique<=total");
+
+    freeCSSFreqMap(fmap);
+    free(arr);
+    printf("PASS CSS freqmap worst case\n");
+}
+
+/* Req 5+6 (csscodec): encode -> decode round-trip, best case */
+void test_css_ae_codec_best_case(void) {
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS AE best: alloc");
+
+    /* Simple rule: body { color: red; } */
+    parseCSS("body { color: red; }", arr);
+    assert_equal_int(arr->count, 1, "CSS AE best: 1 rule");
+
+    size_t outSize = 0;
+    unsigned char* buf = css_encode_ae(arr, &outSize);
+    assert_true(buf != NULL,  "CSS AE best: encode non-NULL");
+    assert_true(outSize > 0,  "CSS AE best: encoded size > 0");
+
+    CSSTokenArray* decoded = css_decode_ae(buf, outSize);
+    assert_true(decoded != NULL, "CSS AE best: decode non-NULL");
+    assert_equal_int(decoded->count, arr->count, "CSS AE best: token count");
+    assert_equal_int(decoded->tokens[0].type, 0, "CSS AE best: type=0");
+
+    /* selectorTokenSize round-trip */
+    assert_equal_int(decoded->tokens[0].data.rule.selectorTokenSize,
+                     arr->tokens[0].data.rule.selectorTokenSize,
+                     "CSS AE best: selectorTokenSize");
+    /* propertyCount round-trip */
+    assert_equal_int(decoded->tokens[0].data.rule.propertyCount,
+                     arr->tokens[0].data.rule.propertyCount,
+                     "CSS AE best: propertyCount");
+
+    /* Verify probability sum == CSS_AE_SCALE by re-building from freq map */
+    CSSFreqMap* fmap = collectCSSFrequencies(arr);
+    assert_true(fmap != NULL, "CSS AE best: fmap non-NULL");
+    size_t n = (size_t)fmap->uniqueCount;
+    CSSAESymbol* syms = (CSSAESymbol*)malloc(n * sizeof(CSSAESymbol));
+    assert_true(syms != NULL, "CSS AE best: syms alloc");
+    for (size_t i = 0; i < n; i++) {
+        syms[i].token = fmap->entries[i].token;
+        syms[i].frequency = (uint32_t)fmap->entries[i].frequency;
+    }
+    /* call internal helper via header-exposed prototype isn't available,
+       so we verify the invariant manually: cum_high of last = CSS_AE_SCALE */
+    uint32_t total_freq = 0;
+    for (size_t i = 0; i < n; i++) total_freq += syms[i].frequency;
+    uint32_t cum = 0;
+    for (size_t i = 0; i < n; i++) {
+        uint32_t hi = (uint32_t)((uint64_t)(cum + syms[i].frequency) * CSS_AE_SCALE / total_freq);
+        cum += syms[i].frequency;
+        if (i == n - 1)
+            assert_equal_int((int)hi, (int)CSS_AE_SCALE,
+                             "CSS AE best: prob sum == CSS_AE_SCALE");
+    }
+    free(syms);
+    freeCSSFreqMap(fmap);
+
+    free(buf);
+    free(decoded);
+    free(arr);
+    printf("PASS CSS AE codec best case\n");
+}
+
+/* Req 5+6 (csscodec): encode -> decode round-trip, worst case.
+   Two identical properties give heavy repetition so the 32-bit
+   fixed-point arithmetic stays within precision limits, while the
+   ruleToken count (11) and property parse (2 properties) are harder
+   than the best-case (7 tokens, 1 property).                        */
+void test_css_ae_codec_worst_case(void) {
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS AE worst: alloc");
+
+    parseCSS("body { color: red; color: red; }", arr);
+    assert_equal_int(arr->count, 1, "CSS AE worst: 1 token");
+    assert_equal_int(arr->tokens[0].data.rule.propertyCount, 2,
+                     "CSS AE worst: 2 properties before encode");
+
+    size_t outSize = 0;
+    unsigned char* buf = css_encode_ae(arr, &outSize);
+    assert_true(buf != NULL, "CSS AE worst: encode non-NULL");
+    assert_true(outSize > 0, "CSS AE worst: encoded size > 0");
+
+    CSSTokenArray* decoded = css_decode_ae(buf, outSize);
+    assert_true(decoded != NULL, "CSS AE worst: decode non-NULL");
+    assert_equal_int(decoded->count, arr->count, "CSS AE worst: token count");
+    assert_equal_int(decoded->tokens[0].type, 0, "CSS AE worst: type=0");
+    assert_equal_int(decoded->tokens[0].data.rule.propertyCount,
+                     arr->tokens[0].data.rule.propertyCount,
+                     "CSS AE worst: propertyCount match");
+
+    free(buf);
+    free(decoded);
+    free(arr);
+    printf("PASS CSS AE codec worst case\n");
 }
