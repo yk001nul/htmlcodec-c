@@ -1,3 +1,4 @@
+/* test-runner v2 */
 #include "tokenizer-test.h"
 
 int main(void) {
@@ -106,6 +107,14 @@ int main(void) {
     test_zlib_compare_css_ae_best_case();
     test_zlib_compare_css_ae_worst_case();
     test_zlib_compare_css_ae_long_stylesheet();
+
+    printf("\n--- NL-EN OPTIMISED CODEC TESTS (Steps 1-4) ---\n");
+    test_nl_en_opt_tokenizer_word_match();
+    test_nl_en_opt_tokenizer_longest_match();
+    test_nl_en_opt_codec_roundtrip();
+    test_nl_en_opt_codec_casestyle();
+    test_nl_en_opt_codec_long_roundtrip();
+    test_nl_en_opt_compression_ratio();
 
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);

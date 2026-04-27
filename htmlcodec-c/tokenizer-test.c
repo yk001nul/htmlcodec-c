@@ -2474,3 +2474,266 @@ void test_css_ae_codec_long_rule(void) {
     free(decoded);
     free(arr);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * NL-EN optimised codec tests (Steps 1-4)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Verify that tokenizeEnglishOpt assigns word-level flags for common words.
+ * A single word like "together" must produce exactly 1 token whose flag is
+ * in [NL_EN_PATTERN_COUNT, NL_EN_OPT_PATTERN_COUNT).                       */
+void test_nl_en_opt_tokenizer_word_match(void) {
+    /* "together" is in the 8-char word list; old tokenizer splits it */
+    NLTokenArray* old_arr = tokenizeEnglish("together");
+    NLTokenArray* opt_arr = tokenizeEnglishOpt("together");
+
+    assert_true(old_arr != NULL, "opt word match: old tokenize not NULL");
+    assert_true(opt_arr != NULL, "opt word match: opt tokenize not NULL");
+
+    if (old_arr && opt_arr) {
+        /* Old tokenizer needs multiple tokens; optimised should use fewer */
+        assert_true((int)opt_arr->count < (int)old_arr->count,
+                    "opt word match: 'together' uses fewer tokens with word dict");
+
+        /* Exactly 1 token expected when the whole word matches */
+        assert_equal_int((int)opt_arr->count, 1,
+                         "opt word match: 'together' -> 1 token");
+
+        if (opt_arr->count == 1) {
+            assert_true(opt_arr->tokens[0].isPattern,
+                        "opt word match: token isPattern=true");
+            /* Flag must fall in the word-dictionary range */
+            assert_true(opt_arr->tokens[0].flag >= NL_EN_PATTERN_COUNT &&
+                        opt_arr->tokens[0].flag <  NL_EN_OPT_PATTERN_COUNT,
+                        "opt word match: flag in word-dict range [512, 744)");
+        }
+    }
+
+    freeNLTokenArray(old_arr);
+    freeNLTokenArray(opt_arr);
+    printf("PASS NL-EN opt tokenizer - word match ('together' -> 1 token)\n");
+}
+
+/* Verify that longest-match correctly picks a longer word over a shorter
+ * syllable pattern at the same position.  "between" starts with "be" (a CV
+ * syllable pattern index 0), but the opt tokenizer must prefer the 7-char
+ * word entry.                                                               */
+void test_nl_en_opt_tokenizer_longest_match(void) {
+    NLTokenArray* arr = tokenizeEnglishOpt("between");
+    assert_true(arr != NULL, "opt longest match: tokenize not NULL");
+    if (!arr) return;
+
+    assert_equal_int((int)arr->count, 1,
+                     "opt longest match: 'between' -> 1 token (not 'be' + rest)");
+
+    if (arr->count == 1) {
+        assert_true(arr->tokens[0].isPattern,
+                    "opt longest match: token isPattern=true");
+        assert_true(arr->tokens[0].flag >= NL_EN_PATTERN_COUNT,
+                    "opt longest match: flag is a word entry, not syllable");
+    }
+
+    freeNLTokenArray(arr);
+
+    /* Also check that "people" (6-char word) beats "pe" + "op" + "le" */
+    NLTokenArray* arr2 = tokenizeEnglishOpt("people");
+    assert_true(arr2 != NULL, "opt longest match: 'people' not NULL");
+    if (arr2) {
+        assert_equal_int((int)arr2->count, 1,
+                         "opt longest match: 'people' -> 1 token");
+        freeNLTokenArray(arr2);
+    }
+
+    printf("PASS NL-EN opt tokenizer - longest match ('between','people' each 1 token)\n");
+}
+
+/* Helper: compare two NLTokenArrays for lossless round-trip equality */
+static int compare_token_arrays_opt(const NLTokenArray* a, const NLTokenArray* b) {
+    if (!a || !b || a->count != b->count) return 0;
+    for (size_t i = 0; i < a->count; i++) {
+        if (a->tokens[i].isPattern != b->tokens[i].isPattern) return 0;
+        if (a->tokens[i].flag      != b->tokens[i].flag)      return 0;
+        if (a->tokens[i].isPattern &&
+            a->tokens[i].caseStyle != b->tokens[i].caseStyle) return 0;
+    }
+    return 1;
+}
+
+/* Short-text lossless round-trip through nl_en_encode_opt / nl_en_decode_opt */
+void test_nl_en_opt_codec_roundtrip(void) {
+    const char* text = "the cat sat on the mat";
+
+    NLTokenArray* original = tokenizeEnglishOpt(text);
+    assert_true(original != NULL, "opt roundtrip: tokenize not NULL");
+    if (!original) return;
+    assert_true((int)original->count > 0, "opt roundtrip: at least 1 token");
+
+    size_t enc_size = 0;
+    unsigned char* encoded = nl_en_encode_opt(original, original->count, &enc_size);
+    assert_true(encoded != NULL, "opt roundtrip: encode not NULL");
+    assert_true(enc_size > 0,   "opt roundtrip: encoded size > 0");
+
+    if (!encoded) { freeNLTokenArray(original); return; }
+
+    NLTokenArray* decoded = nl_en_decode_opt(encoded, enc_size);
+    assert_true(decoded != NULL, "opt roundtrip: decode not NULL");
+
+    if (decoded) {
+        assert_equal_int((int)decoded->count, (int)original->count,
+                         "opt roundtrip: decoded count matches");
+        assert_true(compare_token_arrays_opt(original, decoded),
+                    "opt roundtrip: all tokens match losslessly");
+    }
+
+    free(encoded);
+    freeNLTokenArray(decoded);
+    freeNLTokenArray(original);
+    printf("PASS NL-EN opt codec - short text round-trip (\"%s\")\n", text);
+}
+
+/* Verify that caseStyle survives the round-trip for all four style values.
+ * Constructs a token array explicitly with caseStyle 0-3 and checks decode. */
+void test_nl_en_opt_codec_casestyle(void) {
+    NLTokenArray input;
+    input.count = 4;
+
+    /* Four pattern tokens, each with a different caseStyle (0=lower,1=upper,
+     * 2=firstUpper,3=lastUpper).  Use word-dict flag 512 (first word).     */
+    for (int cs = 0; cs < 4; cs++) {
+        input.tokens[cs].isPattern = true;
+        input.tokens[cs].flag      = (unsigned short)(NL_EN_PATTERN_COUNT + cs % NL_EN_WORD_COUNT);
+        input.tokens[cs].caseStyle = cs;
+    }
+
+    size_t enc_size = 0;
+    unsigned char* encoded = nl_en_encode_opt(&input, input.count, &enc_size);
+    assert_true(encoded != NULL, "opt caseStyle: encode not NULL");
+    if (!encoded) return;
+
+    NLTokenArray* decoded = nl_en_decode_opt(encoded, enc_size);
+    assert_true(decoded != NULL, "opt caseStyle: decode not NULL");
+
+    if (decoded) {
+        assert_equal_int((int)decoded->count, 4, "opt caseStyle: count=4");
+        for (int cs = 0; cs < 4 && (int)decoded->count > cs; cs++) {
+            assert_equal_int(decoded->tokens[cs].caseStyle, cs,
+                             "opt caseStyle: caseStyle round-trips correctly");
+        }
+    }
+
+    free(encoded);
+    freeNLTokenArray(decoded);
+    printf("PASS NL-EN opt codec - caseStyle round-trip (all 4 styles)\n");
+}
+
+/* Long-text lossless round-trip: exercises renormalization and the order-1
+ * context model across a realistic multi-sentence passage.                  */
+void test_nl_en_opt_codec_long_roundtrip(void) {
+    const char* text =
+        "The implementation of advanced data compression algorithms requires "
+        "careful consideration of memory efficiency and processing speed. "
+        "Our approach utilizes bit-level packing to minimize storage requirements "
+        "while maintaining data integrity throughout the encoding and decoding process. "
+        "Between encoder and decoder, the context model must remain perfectly "
+        "synchronized so that every token is recovered without error.";
+
+    NLTokenArray* original = tokenizeEnglishOpt(text);
+    assert_true(original != NULL, "opt long roundtrip: tokenize not NULL");
+    if (!original) return;
+    assert_true((int)original->count > 20, "opt long roundtrip: >20 tokens");
+
+    size_t enc_size = 0;
+    unsigned char* encoded = nl_en_encode_opt(original, original->count, &enc_size);
+    assert_true(encoded != NULL, "opt long roundtrip: encode not NULL");
+    assert_true(enc_size > 0,   "opt long roundtrip: encoded size > 0");
+
+    if (!encoded) { freeNLTokenArray(original); return; }
+
+    NLTokenArray* decoded = nl_en_decode_opt(encoded, enc_size);
+    assert_true(decoded != NULL, "opt long roundtrip: decode not NULL");
+
+    if (decoded) {
+        assert_equal_int((int)decoded->count, (int)original->count,
+                         "opt long roundtrip: decoded count matches original");
+        assert_true(compare_token_arrays_opt(original, decoded),
+                    "opt long roundtrip: all tokens match losslessly");
+    }
+
+    printf("PASS NL-EN opt codec - long round-trip (%zu tokens, %zu bytes encoded)\n",
+           original->count, enc_size);
+
+    free(encoded);
+    freeNLTokenArray(decoded);
+    freeNLTokenArray(original);
+}
+
+/* Compression ratio benchmark on a 1024+ byte passage.
+ * Compares nl_en_encode_opt against nl_en_encode_ae on the same text
+ * (both from tokenizeEnglishOpt, which gives the opt codec an advantage
+ * through word-level tokens AND reduces token count for the AE baseline).
+ * Asserts that the opt codec is smaller than the old AE codec on this input,
+ * and reports the ratio toward the 75% compression target.                   */
+void test_nl_en_opt_compression_ratio(void) {
+    const char* text =
+        "The global software industry continues to evolve at an unprecedented pace, "
+        "driven by advances in artificial intelligence, cloud computing, and distributed "
+        "systems. Organizations must adapt their development processes to remain competitive "
+        "in an increasingly complex technological landscape. Effective architecture decisions "
+        "require balancing performance, maintainability, and scalability while managing "
+        "technical debt and ensuring long-term sustainability of the codebase. Engineering "
+        "teams that invest in robust testing infrastructure and continuous integration "
+        "pipelines consistently deliver higher quality products with fewer defects. "
+        "Between encoder and decoder, the order-one context model conditions each "
+        "probability estimate on the previous token, so common syllable sequences "
+        "receive shorter arithmetic codes than they would under a simple unigram model. "
+        "The word-level dictionary further reduces the total token count by collapsing "
+        "frequent multi-syllable words such as 'together', 'because', 'through', and "
+        "'people' into single entries, each encoded as one symbol in the AE stream.";
+
+    size_t input_len = strlen(text);
+    assert_true(input_len >= 1024, "opt compression: input >= 1024 bytes");
+
+    NLTokenArray* tokens = tokenizeEnglishOpt(text);
+    assert_true(tokens != NULL,         "opt compression: tokenize not NULL");
+    assert_true((int)tokens->count > 0, "opt compression: produces tokens");
+    if (!tokens) return;
+
+    /* Encode with new optimised codec */
+    size_t opt_size = 0;
+    unsigned char* opt_enc = nl_en_encode_opt(tokens, tokens->count, &opt_size);
+    assert_true(opt_enc != NULL, "opt compression: opt encode not NULL");
+
+    /* Encode with old AE codec (on the same extended-dict token array) */
+    size_t ae_size = 0;
+    unsigned char* ae_enc = nl_en_encode_ae(tokens, tokens->count, &ae_size);
+    assert_true(ae_enc != NULL, "opt compression: AE encode not NULL");
+
+    double opt_ratio = (double)opt_size  / (double)input_len * 100.0;
+    double ae_ratio  = (double)ae_size   / (double)input_len * 100.0;
+
+    printf("  Input:        %zu bytes\n", input_len);
+    printf("  Tokens:       %zu\n", tokens->count);
+    printf("  Old AE:       %zu bytes (%.1f%% of input)\n", ae_size,  ae_ratio);
+    printf("  Opt codec:    %zu bytes (%.1f%% of input, target <=25%%)\n",
+           opt_size, opt_ratio);
+
+    /* The opt codec must produce a smaller output than the old AE on this input */
+    assert_true(opt_size < ae_size,
+                "opt compression: opt codec smaller than old AE codec");
+
+    /* Lossless round-trip check even at this size */
+    NLTokenArray* decoded = nl_en_decode_opt(opt_enc, opt_size);
+    assert_true(decoded != NULL, "opt compression: decode not NULL");
+    if (decoded) {
+        assert_equal_int((int)decoded->count, (int)tokens->count,
+                         "opt compression: decoded count matches");
+        assert_true(compare_token_arrays_opt(tokens, decoded),
+                    "opt compression: round-trip is lossless");
+        freeNLTokenArray(decoded);
+    }
+
+    free(opt_enc);
+    free(ae_enc);
+    freeNLTokenArray(tokens);
+    printf("PASS NL-EN opt codec - compression ratio benchmark (>1024 bytes)\n");
+}

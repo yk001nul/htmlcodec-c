@@ -44,4 +44,23 @@ typedef struct {
 NLFreqMap* collectNLFrequencies(const NLTokenArray* arr);
 void freeNLFreqMap(NLFreqMap* map);
 
+/* ── Extended word-level dictionary ─────────────────────────────────────── */
+
+/* Common English words appended to the syllable dictionary.
+ * Token flags NL_EN_PATTERN_COUNT .. NL_EN_OPT_PATTERN_COUNT-1 index these. */
+#define NL_EN_WORD_COUNT       232
+#define NL_EN_OPT_PATTERN_COUNT (NL_EN_PATTERN_COUNT + NL_EN_WORD_COUNT)
+
+extern const char* NL_EN_WORD_PATTERNS[NL_EN_WORD_COUNT];
+
+/**
+ * Extended tokenizer using true longest-match over both the 512-entry syllable
+ * dictionary and the NL_EN_WORD_COUNT word dictionary.  Word entries always win
+ * ties because a longer match supersedes a shorter one at the same position.
+ *
+ * Syllable tokens: flag in [0, NL_EN_PATTERN_COUNT)
+ * Word tokens:     flag in [NL_EN_PATTERN_COUNT, NL_EN_OPT_PATTERN_COUNT)
+ */
+NLTokenArray* tokenizeEnglishOpt(const char* input);
+
 #endif // NL_EN_TOKENIZER_H
