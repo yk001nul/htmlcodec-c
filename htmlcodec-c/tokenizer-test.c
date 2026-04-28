@@ -3139,3 +3139,320 @@ void test_nl_en_opt_compression_ratio(void) {
     freeNLTokenArray(tokens);
     printf("PASS NL-EN opt codec - compression ratio benchmark (>1024 bytes)\n");
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * CLJS AE opt codec tests
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static bool cljs_token_arrays_equal(const CLJSTokenArray* a, const CLJSTokenArray* b) {
+    if (a->count != b->count) return false;
+    for (size_t i = 0; i < a->count; i++) {
+        if (a->tokens[i].isPattern != b->tokens[i].isPattern) return false;
+        if (a->tokens[i].flag      != b->tokens[i].flag)      return false;
+        /* caseStyle only matters for pattern tokens (non-pattern ASCII chars
+           carry caseStyle=3 in the tokenizer but 0 after decoding — irrelevant) */
+        if (a->tokens[i].isPattern &&
+            a->tokens[i].caseStyle != b->tokens[i].caseStyle) return false;
+    }
+    return true;
+}
+
+/* Best case: highly repetitive JS with many identical pattern tokens. */
+void test_cljs_ae_opt_codec_best_case(void) {
+    const char* js = "function log() { console.log(result); console.log(result); "
+                     "console.log(result); console.log(result); console.log(result); }";
+    size_t input_len = strlen(js);
+
+    CLJSTokenArray* arr = tokenizeJavaScript(js);
+    assert_true(arr != NULL, "CLJS best: tokenize non-NULL");
+    if (!arr) return;
+    assert_true(arr->count > 0, "CLJS best: token count > 0");
+
+    size_t enc_size = 0;
+    unsigned char* enc = cljs_encode_ae_opt(arr, arr->count, &enc_size);
+    assert_true(enc != NULL,  "CLJS best: encode non-NULL");
+    assert_true(enc_size > 0, "CLJS best: encoded size > 0");
+    assert_true(enc_size < input_len, "CLJS best: encoded smaller than raw input");
+
+    printf("  CLJS best case: raw %zu B -> encoded %zu B (%.1f%%)\n",
+           input_len, enc_size, 100.0 * (1.0 - (double)enc_size / (double)input_len));
+
+    if (enc) {
+        CLJSTokenArray* dec = cljs_decode_ae_opt(enc, enc_size);
+        assert_true(dec != NULL, "CLJS best: decode non-NULL");
+        if (dec) {
+            assert_equal_int((int)dec->count, (int)arr->count,
+                             "CLJS best: decoded count matches");
+            assert_true(cljs_token_arrays_equal(arr, dec), "CLJS best: round-trip lossless");
+            freeCLJSTokenArray(dec);
+        }
+        free(enc);
+    }
+    freeCLJSTokenArray(arr);
+    printf("PASS CLJS AE opt codec - best case\n");
+}
+
+/* Worst case: only non-pattern ASCII characters, no dictionary matches. */
+void test_cljs_ae_opt_codec_worst_case(void) {
+    const char* js = "!@#!@#!@#!@#!@#!@#!@#!@#!@#!@#!@#!@#!@#!@#!@#!@#";
+    size_t input_len = strlen(js);
+
+    CLJSTokenArray* arr = tokenizeJavaScript(js);
+    assert_true(arr != NULL, "CLJS worst: tokenize non-NULL");
+    if (!arr) return;
+    assert_true(arr->count > 0, "CLJS worst: token count > 0");
+
+    size_t enc_size = 0;
+    unsigned char* enc = cljs_encode_ae_opt(arr, arr->count, &enc_size);
+    assert_true(enc != NULL,  "CLJS worst: encode non-NULL");
+    assert_true(enc_size > 0, "CLJS worst: encoded size > 0");
+
+    printf("  CLJS worst case: raw %zu B -> encoded %zu B\n", input_len, enc_size);
+
+    if (enc) {
+        CLJSTokenArray* dec = cljs_decode_ae_opt(enc, enc_size);
+        assert_true(dec != NULL, "CLJS worst: decode non-NULL");
+        if (dec) {
+            assert_equal_int((int)dec->count, (int)arr->count,
+                             "CLJS worst: decoded count matches");
+            assert_true(cljs_token_arrays_equal(arr, dec), "CLJS worst: round-trip lossless");
+            freeCLJSTokenArray(dec);
+        }
+        free(enc);
+    }
+    freeCLJSTokenArray(arr);
+    printf("PASS CLJS AE opt codec - worst case\n");
+}
+
+/* Short round-trip: realistic JS snippet with mixed patterns and ASCII. */
+void test_cljs_ae_opt_codec_roundtrip(void) {
+    const char* js = "const result = fetch(url).then(response => response.json());";
+
+    CLJSTokenArray* arr = tokenizeJavaScript(js);
+    assert_true(arr != NULL, "CLJS roundtrip: tokenize non-NULL");
+    if (!arr) return;
+
+    size_t enc_size = 0;
+    unsigned char* enc = cljs_encode_ae_opt(arr, arr->count, &enc_size);
+    assert_true(enc != NULL,  "CLJS roundtrip: encode non-NULL");
+    assert_true(enc_size > 0, "CLJS roundtrip: encoded size > 0");
+
+    if (enc) {
+        CLJSTokenArray* dec = cljs_decode_ae_opt(enc, enc_size);
+        assert_true(dec != NULL, "CLJS roundtrip: decode non-NULL");
+        if (dec) {
+            assert_equal_int((int)dec->count, (int)arr->count,
+                             "CLJS roundtrip: decoded count matches");
+            assert_true(cljs_token_arrays_equal(arr, dec),
+                        "CLJS roundtrip: round-trip is lossless");
+            freeCLJSTokenArray(dec);
+        }
+        free(enc);
+    }
+    freeCLJSTokenArray(arr);
+    printf("PASS CLJS AE opt codec - short round-trip\n");
+}
+
+/* Long round-trip: a realistic module-sized JS snippet. */
+void test_cljs_ae_opt_codec_long_roundtrip(void) {
+    const char* js =
+        "import { useState, useEffect, useCallback } from 'react';\n"
+        "function DataComponent({ config, options }) {\n"
+        "  const [state, setState] = useState(null);\n"
+        "  const [error, setError] = useState(null);\n"
+        "  const loadData = useCallback(async () => {\n"
+        "    try {\n"
+        "      const response = await fetch(config.url);\n"
+        "      if (!response.ok) throw new Error('Network error');\n"
+        "      const data = await response.json();\n"
+        "      setState(data);\n"
+        "    } catch (err) {\n"
+        "      setError(err.message);\n"
+        "      console.error('Failed to load:', err);\n"
+        "    }\n"
+        "  }, [config]);\n"
+        "  useEffect(() => { loadData(); return () => setState(null); }, [loadData]);\n"
+        "  if (error) return null;\n"
+        "  if (!state) return null;\n"
+        "  return state;\n"
+        "}\n"
+        "export default DataComponent;\n";
+
+    CLJSTokenArray* arr = tokenizeJavaScript(js);
+    assert_true(arr != NULL, "CLJS long roundtrip: tokenize non-NULL");
+    if (!arr) return;
+    assert_true(arr->count > 0, "CLJS long roundtrip: token count > 0");
+
+    size_t enc_size = 0;
+    unsigned char* enc = cljs_encode_ae_opt(arr, arr->count, &enc_size);
+    assert_true(enc != NULL,  "CLJS long roundtrip: encode non-NULL");
+    assert_true(enc_size > 0, "CLJS long roundtrip: encoded size > 0");
+
+    if (enc) {
+        CLJSTokenArray* dec = cljs_decode_ae_opt(enc, enc_size);
+        assert_true(dec != NULL, "CLJS long roundtrip: decode non-NULL");
+        if (dec) {
+            assert_equal_int((int)dec->count, (int)arr->count,
+                             "CLJS long roundtrip: decoded count matches");
+            assert_true(cljs_token_arrays_equal(arr, dec),
+                        "CLJS long roundtrip: round-trip is lossless");
+            freeCLJSTokenArray(dec);
+        }
+        free(enc);
+    }
+    freeCLJSTokenArray(arr);
+    printf("PASS CLJS AE opt codec - long round-trip\n");
+}
+
+static void print_cljs_benchmark_row(size_t raw, size_t codec_size, size_t zlib_size) {
+    double codec_ratio = 100.0 * (1.0 - (double)codec_size / (double)raw);
+    double zlib_ratio  = 100.0 * (1.0 - (double)zlib_size  / (double)raw);
+    printf("  raw %zu B | CLJS AE opt %zu B (%.1f%% reduction) | zlib %zu B (%.1f%% reduction)\n",
+           raw, codec_size, codec_ratio, zlib_size, zlib_ratio);
+}
+
+/* Short script benchmark. */
+void test_zlib_compare_cljs_ae_opt_short(void) {
+    const char* js = "function add(a, b) { return a + b; } console.log(add(1, 2));";
+    size_t input_len = strlen(js);
+
+    CLJSTokenArray* arr = tokenizeJavaScript(js);
+    assert_true(arr != NULL, "CLJS short bench: tokenize non-NULL");
+    if (!arr) return;
+
+    size_t enc_size = 0;
+    unsigned char* enc = cljs_encode_ae_opt(arr, arr->count, &enc_size);
+    assert_true(enc != NULL,  "CLJS short bench: encode non-NULL");
+    assert_true(enc_size > 0, "CLJS short bench: encoded size > 0");
+
+    uLongf zlib_len = compressBound((uLong)input_len);
+    unsigned char* zlib_buf = (unsigned char*)malloc((size_t)zlib_len);
+    assert_true(zlib_buf != NULL, "CLJS short bench: malloc zlib");
+    int zr = compress(zlib_buf, &zlib_len, (const Bytef*)js, (uLong)input_len);
+    assert_true(zr == Z_OK, "CLJS short bench: zlib Z_OK");
+
+    print_cljs_benchmark_row(input_len, enc_size, (size_t)zlib_len);
+
+    if (enc) {
+        CLJSTokenArray* dec = cljs_decode_ae_opt(enc, enc_size);
+        assert_true(dec != NULL, "CLJS short bench: decode non-NULL");
+        if (dec) {
+            assert_true(cljs_token_arrays_equal(arr, dec),
+                        "CLJS short bench: round-trip lossless");
+            freeCLJSTokenArray(dec);
+        }
+        free(enc);
+    }
+    free(zlib_buf);
+    freeCLJSTokenArray(arr);
+    printf("PASS zlib vs CLJS AE opt - short script\n");
+}
+
+/* Long script benchmark: production-like module >= 1024 bytes. */
+void test_zlib_compare_cljs_ae_opt_long(void) {
+    const char* js =
+        "import { useState, useEffect, useCallback, useMemo } from 'react';\n"
+        "\n"
+        "const API_BASE = process.env.API_URL;\n"
+        "\n"
+        "async function fetchData(endpoint, options) {\n"
+        "  const response = await fetch(API_BASE + endpoint, options);\n"
+        "  if (!response.ok) throw new Error('Request failed: ' + response.status);\n"
+        "  return response.json();\n"
+        "}\n"
+        "\n"
+        "function useData(endpoint) {\n"
+        "  const [data, setData] = useState(null);\n"
+        "  const [error, setError] = useState(null);\n"
+        "  const [loading, setLoading] = useState(false);\n"
+        "\n"
+        "  const load = useCallback(async () => {\n"
+        "    setLoading(true);\n"
+        "    try {\n"
+        "      const result = await fetchData(endpoint);\n"
+        "      setData(result);\n"
+        "      setError(null);\n"
+        "    } catch (err) {\n"
+        "      setError(err.message);\n"
+        "      console.error('useData error:', err);\n"
+        "    } finally {\n"
+        "      setLoading(false);\n"
+        "    }\n"
+        "  }, [endpoint]);\n"
+        "\n"
+        "  useEffect(() => { load(); }, [load]);\n"
+        "  return { data, error, loading, reload: load };\n"
+        "}\n"
+        "\n"
+        "function DataTable({ endpoint, columns }) {\n"
+        "  const { data, error, loading } = useData(endpoint);\n"
+        "\n"
+        "  const rows = useMemo(() => {\n"
+        "    if (!data) return [];\n"
+        "    return data.map((item, index) => columns.map(col => item[col.key]));\n"
+        "  }, [data, columns]);\n"
+        "\n"
+        "  if (loading) return null;\n"
+        "  if (error) { console.error(error); return null; }\n"
+        "  if (!data || data.length === 0) return null;\n"
+        "  return rows;\n"
+        "}\n"
+        "\n"
+        "function EventManager() {\n"
+        "  const handlers = new Map();\n"
+        "  function addEventListener(type, handler) {\n"
+        "    if (!handlers.has(type)) handlers.set(type, []);\n"
+        "    handlers.get(type).push(handler);\n"
+        "  }\n"
+        "  function removeEventListener(type, handler) {\n"
+        "    if (!handlers.has(type)) return;\n"
+        "    const list = handlers.get(type).filter(h => h !== handler);\n"
+        "    handlers.set(type, list);\n"
+        "  }\n"
+        "  function dispatchEvent(type, event) {\n"
+        "    if (!handlers.has(type)) return;\n"
+        "    handlers.get(type).forEach(h => h(event));\n"
+        "  }\n"
+        "  return { addEventListener, removeEventListener, dispatchEvent };\n"
+        "}\n"
+        "\n"
+        "export { useData, DataTable, EventManager };\n";
+
+    size_t input_len = strlen(js);
+    assert_true(input_len >= 1024, "CLJS long bench: input >= 1024 bytes");
+
+    CLJSTokenArray* arr = tokenizeJavaScript(js);
+    assert_true(arr != NULL, "CLJS long bench: tokenize non-NULL");
+    if (!arr) return;
+    assert_true(arr->count > 0, "CLJS long bench: token count > 0");
+
+    size_t enc_size = 0;
+    unsigned char* enc = cljs_encode_ae_opt(arr, arr->count, &enc_size);
+    assert_true(enc != NULL,  "CLJS long bench: encode non-NULL");
+    assert_true(enc_size > 0, "CLJS long bench: encoded size > 0");
+
+    uLongf zlib_len = compressBound((uLong)input_len);
+    unsigned char* zlib_buf = (unsigned char*)malloc((size_t)zlib_len);
+    assert_true(zlib_buf != NULL, "CLJS long bench: malloc zlib");
+    int zr = compress(zlib_buf, &zlib_len, (const Bytef*)js, (uLong)input_len);
+    assert_true(zr == Z_OK, "CLJS long bench: zlib Z_OK");
+
+    printf("  CLJS tokens: %zu\n", arr->count);
+    print_cljs_benchmark_row(input_len, enc_size, (size_t)zlib_len);
+
+    if (enc) {
+        CLJSTokenArray* dec = cljs_decode_ae_opt(enc, enc_size);
+        assert_true(dec != NULL, "CLJS long bench: decode non-NULL");
+        if (dec) {
+            assert_equal_int((int)dec->count, (int)arr->count,
+                             "CLJS long bench: decoded count matches");
+            assert_true(cljs_token_arrays_equal(arr, dec),
+                        "CLJS long bench: round-trip lossless");
+            freeCLJSTokenArray(dec);
+        }
+        free(enc);
+    }
+    free(zlib_buf);
+    freeCLJSTokenArray(arr);
+    printf("PASS zlib vs CLJS AE opt - long script (>= 1024 B)\n");
+}

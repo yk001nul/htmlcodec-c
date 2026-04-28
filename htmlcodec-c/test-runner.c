@@ -126,6 +126,16 @@ int main(void) {
     test_zlib_compare_css_opt_worst_case();
     test_zlib_compare_css_opt_long_stylesheet();
 
+    printf("\n--- CLJS AE OPT CODEC TESTS ---\n");
+    test_cljs_ae_opt_codec_best_case();
+    test_cljs_ae_opt_codec_worst_case();
+    test_cljs_ae_opt_codec_roundtrip();
+    test_cljs_ae_opt_codec_long_roundtrip();
+
+    printf("\n--- ZLIB VS CLJS AE OPT BENCHMARK TESTS ---\n");
+    test_zlib_compare_cljs_ae_opt_short();
+    test_zlib_compare_cljs_ae_opt_long();
+
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
 
