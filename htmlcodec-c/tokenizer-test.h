@@ -8,6 +8,7 @@
 #include <assert.h>
 #include "html-tokenizer.h"
 #include "css-tokenizer.h"
+#include "cl-javascript-codec.h"
 
 extern int testsPassed;
 extern int testsFailed;
@@ -160,5 +161,13 @@ void test_css_opt_compression_ratio();
 void test_zlib_compare_css_opt_best_case();
 void test_zlib_compare_css_opt_worst_case();
 void test_zlib_compare_css_opt_long_stylesheet();
+
+// CLJS AE opt codec tests
+void test_cljs_ae_opt_codec_best_case();
+void test_cljs_ae_opt_codec_worst_case();
+void test_cljs_ae_opt_codec_roundtrip();
+void test_cljs_ae_opt_codec_long_roundtrip();
+void test_zlib_compare_cljs_ae_opt_short();
+void test_zlib_compare_cljs_ae_opt_long();
 
 #endif // TOKENIZER_TEST_H

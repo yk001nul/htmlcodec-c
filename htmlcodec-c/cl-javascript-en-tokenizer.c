@@ -3,25 +3,93 @@
 #include <ctype.h>
 
 const char* CL_JS_EN_RAW_PATTERNS[CL_JS_EN_PATTERN_COUNT] = {
-    // 1) first 64 ES2025 reserved JavaScript keywords
-    "await","break","case","catch","class","const","continue","debugger","default","delete","do","else","enum","export","extends","false","finally","for","function","if","implements","import","in","instanceof","interface","let","new","null","package","private","protected","public","return","static","super","switch","this","throw","true","try","typeof","var","void","while","with","yield","abstract","boolean","byte","char","double","final","float","goto","int","long","native","short","synchronized","throws","transient","volatile","as","of",
+    /* 1) 64 ES2025 reserved JavaScript keywords (indices 0–63) */
+    "await","break","case","catch","class","const","continue","debugger","default",
+    "delete","do","else","enum","export","extends","false","finally","for","function",
+    "if","implements","import","in","instanceof","interface","let","new","null","package",
+    "private","protected","public","return","static","super","switch","this","throw","true",
+    "try","typeof","var","void","while","with","yield","abstract","boolean","byte","char",
+    "double","final","float","goto","int","long","native","short","synchronized","throws",
+    "transient","volatile","as","of",
 
-    // 2) next 96 common JavaScript library/framework function/method/API tokens
-    "console.log","console.error","console.warn","console.info","console.debug","console.table","console.assert","console.clear","console.group","console.groupEnd",
-    "Object.keys","Object.values","Object.entries","Object.assign","Object.freeze","Object.create","Object.defineProperty","Object.defineProperties","Object.hasOwnProperty","Number.isNaN","Number.parseInt","Number.parseFloat",
+    /* 2) 96 common JavaScript library/framework function/method/API tokens (64–159) */
+    "console.log","console.error","console.warn","console.info","console.debug",
+    "console.table","console.assert","console.clear","console.group","console.groupEnd",
+    "Object.keys","Object.values","Object.entries","Object.assign","Object.freeze",
+    "Object.create","Object.defineProperty","Object.defineProperties","Object.hasOwnProperty",
+    "Number.isNaN","Number.parseInt","Number.parseFloat",
     "String.prototype.split","String.prototype.trim","String.prototype.toLowerCase","String.prototype.toUpperCase",
-    "Array.prototype.push","Array.prototype.pop","Array.prototype.shift","Array.prototype.unshift","Array.prototype.slice","Array.prototype.splice","Array.prototype.map","Array.prototype.filter","Array.prototype.reduce","Array.prototype.forEach","Array.prototype.some","Array.prototype.every","Array.prototype.find","Array.prototype.findIndex","Array.prototype.includes","Array.prototype.sort","Array.prototype.concat","Array.prototype.join",
-    "window.addEventListener","window.removeEventListener","document.getElementById","document.querySelector","document.querySelectorAll","document.createElement","document.addEventListener","document.removeEventListener",
-    "localStorage.getItem","localStorage.setItem","localStorage.removeItem","sessionStorage.getItem","sessionStorage.setItem","sessionStorage.removeItem",
-    "fetch","Promise.resolve","Promise.reject","Promise.all","Promise.race","Promise.allSettled","Math.max","Math.min","Math.floor","Math.ceil","Math.round","Math.random","decodeURIComponent","encodeURIComponent",
-    "setTimeout","clearTimeout","setInterval","clearInterval","history.pushState","history.replaceState","location.href","document.location","window.location","document.body","document.head","document.title","JSON.parse","JSON.stringify",
-    "addEventListener","removeEventListener","getElementById","querySelector","querySelectorAll","getComputedStyle","requestAnimationFrame","cancelAnimationFrame","setImmediate","clearImmediate",
+    "Array.prototype.push","Array.prototype.pop","Array.prototype.shift","Array.prototype.unshift",
+    "Array.prototype.slice","Array.prototype.splice","Array.prototype.map","Array.prototype.filter",
+    "Array.prototype.reduce","Array.prototype.forEach","Array.prototype.some","Array.prototype.every",
+    "Array.prototype.find","Array.prototype.findIndex","Array.prototype.includes","Array.prototype.sort",
+    "Array.prototype.concat","Array.prototype.join",
+    "window.addEventListener","window.removeEventListener","document.getElementById",
+    "document.querySelector","document.querySelectorAll","document.createElement",
+    "document.addEventListener","document.removeEventListener",
+    "localStorage.getItem","localStorage.setItem","localStorage.removeItem",
+    "sessionStorage.getItem","sessionStorage.setItem","sessionStorage.removeItem",
+    "fetch","Promise.resolve","Promise.reject","Promise.all","Promise.race","Promise.allSettled",
+    "Math.max","Math.min","Math.floor","Math.ceil","Math.round","Math.random",
+    "decodeURIComponent","encodeURIComponent",
+    "setTimeout","clearTimeout","setInterval","clearInterval",
+    "history.pushState","history.replaceState","location.href","document.location",
+    "window.location","document.body","document.head","document.title",
+    "JSON.parse","JSON.stringify",
+    "addEventListener","removeEventListener","getElementById","querySelector","querySelectorAll",
+    "getComputedStyle","requestAnimationFrame","cancelAnimationFrame","setImmediate","clearImmediate",
 
-    // 3) next 64 most commonly used English digraphs in source code
-    "th","he","er","an","re","ed","on","es","st","en","at","te","or","ti","hi","ng","it","is","al","le","se","ve","me","de","ro","no","us","ar","li","el","la","ul","ur","ea","ui","io","ee","ow","ai","qu","ck","ll","ss","rr","ff","tt","pp","oo","ch","sh","ph","wh","gh","wr","kn","mb","nt","ld","sp","pr","tr","cl","rh","yt",
+    /* 3) 64 most commonly used English digraphs in source code (160–223) */
+    "th","he","er","an","re","ed","on","es","st","en","at","te","or","ti","hi","ng",
+    "it","is","al","le","se","ve","me","de","ro","no","us","ar","li","el","la","ul",
+    "ur","ea","ui","io","ee","ow","ai","qu","ck","ll","ss","rr","ff","tt","pp","oo",
+    "ch","sh","ph","wh","gh","wr","kn","mb","nt","ld","sp","pr","tr","cl","rh","yt",
 
-    // 4) next 32 most commonly used non-alphanumeric digraphs in JavaScript source code
-    "()","{}","[]","=>","==","!=","<=",">=","&&","||","??","?:","+=","-=","*=","/=","%=","++","--","<<",">>","?.","::","/*","*/","//",";;","@@","##","~~","^=","&="
+    /* 4) 32 most commonly used non-alphanumeric digraphs in JavaScript (224–255) */
+    "()","{}","[]","=>","==","!=","<=",">=","&&","||","??","?:","+=","-=","*=","/=",
+    "%=","++","--","<<",">>","?.","::","/*","*/","//",";;","@@","##","~~","^=","&=",
+
+    /* 5) 64 common JS identifiers and built-in words (256–319) */
+    "result","error","value","index","item","data","type","name","node","target",
+    "source","config","options","params","callback","handler","response","request",
+    "context","instance","state","props","event","action","model","view","store",
+    "router","service","component","element","input","output","message","promise",
+    "resolve","reject","constructor","prototype","undefined","arguments","Infinity",
+    "toString","valueOf","isArray","parseInt","parseFloat","payload","selector",
+    "attribute","property","method","parameter","variable","constant","boolean",
+    "integer","object","module","string","number","array","function","stream",
+
+    /* 6) 64 common JS short method calls and API patterns (320–383) */
+    ".then(",".catch(",".finally(",".map(",".filter(",".reduce(",".find(",".findIndex(",
+    ".includes(",".some(",".every(",".flat(",".flatMap(",".keys(",".values(",".entries(",
+    ".split(",".trim(",".replace(",".indexOf(",".slice(",".startsWith(",".endsWith(",
+    ".bind(",".call(",".apply(",".toString(",".valueOf(",
+    "require(","module.exports","exports.","process.env","async function ",
+    "new Promise(","new Error(","new Map(","new Set(","new Array(","new Date(",
+    ".json()","await ","} catch","} finally","(error)","(err, ","(err)",
+    ".getAttribute(",".setAttribute(",".className",".innerHTML",".textContent",
+    "React.","useState(","useEffect(","useRef(","useCallback(","useMemo(",
+    ".style.","appendChild(","removeChild(","setTimeout(","clearTimeout(",
+
+    /* 7) 64 common short JS operator patterns and punctuation (384–447) */
+    " === "," !== "," == "," != "," <= "," >= "," && "," || "," ?? ",
+    "() => {","() => ","(e) => ","(err) => ",") => {",
+    "if (","} else {","} else if (","for (let ","for (const ","for (var ",
+    "while (","switch (","case ","default:","break;","continue;","return;",
+    "const {","let {","const [","let [","...rest","...args","...props",
+    "null","true","false","void 0",
+    "(function(","})()","});",
+    "import {","import * as ","export default ","export const ","export function ",
+    "class ","extends ","super(","this.","self.","window.","global.",
+    " = "," + "," - "," * "," / ",
+
+    /* 8) 64 common short verb/noun fragments for JS identifiers (448–511) */
+    "get","set","has","add","run","log","use","try","put","end",
+    "init","bind","find","sort","push","pull","send","read","load","save","copy","move",
+    "create","delete","update","insert","select","remove","handle","manage","process","render",
+    "listen","watch","check","parse","build","fetch","queue","flush","reset","clear",
+    "open","close","start","stop","pause","connect","encode","decode","sign","verify",
+    "async","await","yield","throw","catch","break","return","export","import","class"
 };
 
 const char* CL_JS_EN_PATTERNS[CL_JS_EN_PATTERN_COUNT];
@@ -52,7 +120,7 @@ static bool equal_case_insensitive(const char* a, const char* b, size_t len) {
 }
 
 static int detect_case_style(const char* s, size_t len) {
-    if (len == 0) return 3; // no change needed for empty
+    if (len == 0) return 3;
     bool allLower = true;
     bool allUpper = true;
     for (size_t i = 0; i < len; i++) {
@@ -67,7 +135,7 @@ static int detect_case_style(const char* s, size_t len) {
     bool firstUpper = false;
     if (len > 0 && isalpha((unsigned char)s[0]) && isupper((unsigned char)s[0])) firstUpper = true;
     if (firstUpper) return 2;
-    return 3; // mixed or other: no casing change / no explicit casing flag
+    return 3;
 }
 
 static void initialize_patterns(void) {
@@ -80,19 +148,16 @@ static void initialize_patterns(void) {
 
     qsort(indices, CL_JS_EN_PATTERN_COUNT, sizeof(int), compare_pattern_length_desc);
 
-    minPatternLen = SIZE_MAX;
+    minPatternLen = (size_t)-1;
     for (int i = 0; i < CL_JS_EN_PATTERN_COUNT; i++) {
         const char* p = CL_JS_EN_RAW_PATTERNS[indices[i]];
         CL_JS_EN_PATTERNS[i] = p;
+        /* English digraphs are raw indices 160–223 */
         patternIsDigraph[i] = (indices[i] >= 160 && indices[i] < 224);
         size_t l = strlen(p);
-        if (l < minPatternLen) {
-            minPatternLen = l;
-        }
+        if (l < minPatternLen) minPatternLen = l;
     }
-    if (minPatternLen == SIZE_MAX || minPatternLen == 0) {
-        minPatternLen = 1;
-    }
+    if (minPatternLen == (size_t)-1 || minPatternLen == 0) minPatternLen = 1;
     patternsInitialized = true;
 }
 
@@ -109,7 +174,7 @@ CLJSTokenArray* tokenizeJavaScript(const char* input) {
     while (pos < inputLen && result->count < CL_JS_EN_MAX_TOKENS) {
         bool matched = false;
         size_t matchedLen = 0;
-        unsigned char matchedIndex = 0;
+        unsigned short matchedIndex = 0;
 
         size_t remaining = inputLen - pos;
 
@@ -120,13 +185,13 @@ CLJSTokenArray* tokenizeJavaScript(const char* input) {
             if (equal_case_insensitive(input + pos, pattern, pLen)) {
                 matched = true;
                 matchedLen = pLen;
-                matchedIndex = (unsigned char)i;
+                matchedIndex = (unsigned short)i;
                 break;
             }
         }
 
         if (matched) {
-            int style = 3; // default: no casing change needed
+            int style = 3;
             if (patternIsDigraph[matchedIndex]) {
                 style = detect_case_style(input + pos, matchedLen);
             }
@@ -134,15 +199,10 @@ CLJSTokenArray* tokenizeJavaScript(const char* input) {
             result->tokens[result->count++] = token;
             pos += matchedLen;
         } else {
-            size_t toConsume = 1;
-            if (toConsume > remaining) toConsume = remaining;
-            for (size_t j = 0; j < toConsume && result->count < CL_JS_EN_MAX_TOKENS; j++) {
-                unsigned char ch = (unsigned char)input[pos + j];
-                int style = 3; // non-pattern case, preserve as no change-needed marker
-                CLJSToken token = {false, ch, style};
-                result->tokens[result->count++] = token;
-            }
-            pos += toConsume;
+            unsigned char ch = (unsigned char)input[pos];
+            CLJSToken token = {false, (unsigned short)ch, 3};
+            result->tokens[result->count++] = token;
+            pos++;
         }
     }
 
