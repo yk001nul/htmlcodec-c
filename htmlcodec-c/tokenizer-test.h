@@ -153,4 +153,12 @@ void test_nl_en_opt_codec_casestyle();
 void test_nl_en_opt_codec_long_roundtrip();
 void test_nl_en_opt_compression_ratio();
 
+// CSS optimised codec tests (Steps 1-3)
+void test_css_opt_codec_roundtrip();
+void test_css_opt_codec_long_roundtrip();
+void test_css_opt_compression_ratio();
+void test_zlib_compare_css_opt_best_case();
+void test_zlib_compare_css_opt_worst_case();
+void test_zlib_compare_css_opt_long_stylesheet();
+
 #endif // TOKENIZER_TEST_H

@@ -462,3 +462,447 @@ CSSTokenArray* css_decode_ae(const unsigned char* buffer, size_t bufferSize) {
     free(flat);
     return arr;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Optimised CSS codec: Steps 1-3
+ * ─────────────────────────────────────────────────────────────────────────
+ *  Step 1 – Adaptive AE (vocab header, no per-symbol frequencies)
+ *  Step 2 – Order-1 context model (count[ctx][sym], Laplace init)
+ *  Step 3 – CSS structural bigram seeding
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static int css_opt_find_sym(const CSSOptVocabEntry* vocab, size_t vocab_size,
+                            bool isPattern, unsigned short flag) {
+    for (size_t i = 0; i < vocab_size; i++)
+        if (vocab[i].isPattern == isPattern && vocab[i].flag == flag)
+            return (int)i;
+    return -1;
+}
+
+static void css_opt_cum_bounds(const uint32_t* row, size_t vocab_size, size_t sym,
+                               uint32_t* out_low, uint32_t* out_high) {
+    uint32_t total = 0;
+    for (size_t j = 0; j < vocab_size; j++) total += row[j];
+    uint32_t cum = 0;
+    for (size_t j = 0; j < vocab_size; j++) {
+        uint32_t c = row[j];
+        if (j == sym) {
+            *out_low  = (uint32_t)((uint64_t)cum * CSS_AE_SCALE / total);
+            *out_high = (j + 1 == vocab_size)
+                      ? CSS_AE_SCALE
+                      : (uint32_t)((uint64_t)(cum + c) * CSS_AE_SCALE / total);
+            return;
+        }
+        cum += c;
+    }
+    *out_low = *out_high = 0;
+}
+
+static int css_opt_find_sym_for_scaled(const uint32_t* row, size_t vocab_size,
+                                       uint32_t scaled) {
+    uint32_t total = 0;
+    for (size_t j = 0; j < vocab_size; j++) total += row[j];
+    uint32_t cum = 0;
+    for (size_t j = 0; j < vocab_size; j++) {
+        uint32_t c  = row[j];
+        uint32_t lo = (uint32_t)((uint64_t)cum * CSS_AE_SCALE / total);
+        uint32_t hi = (j + 1 == vocab_size)
+                    ? CSS_AE_SCALE
+                    : (uint32_t)((uint64_t)(cum + c) * CSS_AE_SCALE / total);
+        if (scaled >= lo && scaled < hi) return (int)j;
+        cum += c;
+    }
+    return -1;
+}
+
+/* Pre-warm the count table using CSS segment membership rules.
+ * Each context row gets boosted counts for the tokens that are
+ * structurally expected to follow that token in well-formed CSS.   */
+static void css_opt_seed_bigrams(uint32_t* count_table, size_t vocab_size,
+                                 const CSSOptVocabEntry* vocab) {
+    for (size_t ctx = 0; ctx < vocab_size; ctx++) {
+        uint32_t* row   = count_table + ctx * vocab_size;
+        bool      cpat  = vocab[ctx].isPattern;
+        int       cflag = (int)(unsigned int)vocab[ctx].flag;
+
+        if (!cpat) {
+            if (cflag == '{') {
+                /* After '{': boost property-name tokens (seg 5) */
+                for (size_t s = 0; s < vocab_size; s++)
+                    if (vocab[s].isPattern &&
+                        vocab[s].flag >= (unsigned)CSS_SEG5_START &&
+                        vocab[s].flag <  (unsigned)CSS_SEG6_START)
+                        row[s] += 20;
+            } else if (cflag == ':') {
+                /* After ':': boost value tokens (seg 8–11) */
+                for (size_t s = 0; s < vocab_size; s++)
+                    if (vocab[s].isPattern &&
+                        vocab[s].flag >= (unsigned)CSS_SEG8_START)
+                        row[s] += 20;
+            } else if (cflag == ';') {
+                /* After ';': boost property names and '}' */
+                for (size_t s = 0; s < vocab_size; s++) {
+                    if (vocab[s].isPattern &&
+                        vocab[s].flag >= (unsigned)CSS_SEG5_START &&
+                        vocab[s].flag <  (unsigned)CSS_SEG6_START)
+                        row[s] += 20;
+                    if (!vocab[s].isPattern && (int)(unsigned int)vocab[s].flag == '}')
+                        row[s] += 10;
+                }
+            } else if (cflag == '}') {
+                /* After '}': boost selector/pseudo tokens (seg 1–4) */
+                for (size_t s = 0; s < vocab_size; s++)
+                    if (vocab[s].isPattern &&
+                        vocab[s].flag < (unsigned)CSS_SEG5_START)
+                        row[s] += 10;
+            }
+        } else {
+            int pf = cflag;
+            if (pf >= CSS_SEG5_START && pf < CSS_SEG6_START) {
+                /* After property name: next is virtually always ':' */
+                for (size_t s = 0; s < vocab_size; s++)
+                    if (!vocab[s].isPattern && (int)(unsigned int)vocab[s].flag == ':')
+                        row[s] += 50;
+            } else if (pf < CSS_SEG5_START) {
+                /* After selector/pseudo: next is '{' or another selector */
+                for (size_t s = 0; s < vocab_size; s++) {
+                    if (!vocab[s].isPattern && (int)(unsigned int)vocab[s].flag == '{')
+                        row[s] += 15;
+                    if (vocab[s].isPattern &&
+                        vocab[s].flag < (unsigned)CSS_SEG5_START)
+                        row[s] += 5;
+                }
+            } else if (pf >= CSS_SEG8_START) {
+                /* After value token: next is ';' or another value token */
+                for (size_t s = 0; s < vocab_size; s++) {
+                    if (!vocab[s].isPattern && (int)(unsigned int)vocab[s].flag == ';')
+                        row[s] += 20;
+                    if (vocab[s].isPattern &&
+                        vocab[s].flag >= (unsigned)CSS_SEG8_START)
+                        row[s] += 5;
+                }
+            }
+        }
+    }
+
+    /* Start-of-sequence row: first token is almost always a selector */
+    uint32_t* sos = count_table + vocab_size * vocab_size;
+    for (size_t s = 0; s < vocab_size; s++)
+        if (vocab[s].isPattern && vocab[s].flag < (unsigned)CSS_SEG5_START)
+            sos[s] += 10;
+}
+
+/* ── css_encode_opt ─────────────────────────────────────────────────────── */
+
+unsigned char* css_encode_opt(const CSSTokenArray* arr, size_t* outSize) {
+    *outSize = 0;
+    if (!arr || arr->count == 0) return NULL;
+
+    size_t total = css_total_tokenizables(arr);
+    if (total == 0) return NULL;
+
+    /* Pass 1: build vocab in first-appearance order */
+    CSSOptVocabEntry* vocab = (CSSOptVocabEntry*)malloc(
+        CSS_MAX_UNIQUE_TOKENIZABLE * sizeof(CSSOptVocabEntry));
+    if (!vocab) return NULL;
+    size_t vocab_size = 0;
+
+    for (int t = 0; t < arr->count; t++) {
+        const CSSToken*       tok = &arr->tokens[t];
+        const CSSTokenizable* src;
+        int srcSize;
+        if      (tok->type == 0) { src = tok->data.rule.ruleTokens;         srcSize = tok->data.rule.ruleTokenSize; }
+        else if (tok->type == 1) { src = tok->data.atRule.atRuleTokens;     srcSize = tok->data.atRule.atRuleTokenSize; }
+        else                     { src = tok->data.comment.commentTokens;   srcSize = tok->data.comment.commentTokenSize; }
+
+        for (int i = 0; i < srcSize; i++) {
+            if (css_opt_find_sym(vocab, vocab_size, src[i].isPattern, src[i].flag) < 0
+                    && vocab_size < CSS_MAX_UNIQUE_TOKENIZABLE) {
+                vocab[vocab_size].isPattern = src[i].isPattern;
+                vocab[vocab_size].flag      = src[i].flag;
+                vocab_size++;
+            }
+        }
+    }
+    if (vocab_size == 0) { free(vocab); return NULL; }
+
+    /* Allocate output buffer.
+     * Header: 13(total) + 11(vocab_size) + vocab_size*12(max) + 9 + count*12
+     * AE:     total*32 + 64 (conservative)                                   */
+    size_t header_bits = 13 + 11 + vocab_size * 12 + 9 + (size_t)arr->count * 12;
+    size_t ae_bits     = total * 32 + 64;
+    size_t buf_bytes   = (header_bits + ae_bits + 7) / 8;
+    unsigned char* buffer = (unsigned char*)calloc(buf_bytes, 1);
+    if (!buffer) { free(vocab); return NULL; }
+    size_t bp = 0;
+
+    /* Write header */
+    set_bits(buffer, bp, 13, (unsigned int)total);      bp += 13;
+    set_bits(buffer, bp, 11, (unsigned int)vocab_size); bp += 11;
+
+    for (size_t i = 0; i < vocab_size; i++) {
+        if (vocab[i].isPattern) {
+            set_bits(buffer, bp,  1, 1u);                               bp += 1;
+            set_bits(buffer, bp, 11, (unsigned int)vocab[i].flag);      bp += 11;
+        } else {
+            unsigned int off = (vocab[i].flag >= 32u)
+                             ? (unsigned int)(vocab[i].flag - 32u) : 0u;
+            if (off > 95u) off = 95u;
+            set_bits(buffer, bp, 1, 0u);  bp += 1;
+            set_bits(buffer, bp, 7, off); bp += 7;
+        }
+    }
+
+    set_bits(buffer, bp, 9, (unsigned int)arr->count); bp += 9;
+    for (int t = 0; t < arr->count; t++) {
+        const CSSToken* tok = &arr->tokens[t];
+        int sz;
+        if      (tok->type == 0) sz = tok->data.rule.ruleTokenSize;
+        else if (tok->type == 1) sz = tok->data.atRule.atRuleTokenSize;
+        else                     sz = tok->data.comment.commentTokenSize;
+        set_bits(buffer, bp, 2,  (unsigned int)tok->type); bp += 2;
+        set_bits(buffer, bp, 10, (unsigned int)sz);         bp += 10;
+    }
+
+    /* Initialise adaptive order-1 count table (Laplace + bigram seeding) */
+    size_t    ctx_rows    = vocab_size + 1;
+    uint32_t* count_table = (uint32_t*)malloc(ctx_rows * vocab_size * sizeof(uint32_t));
+    if (!count_table) { free(buffer); free(vocab); return NULL; }
+    for (size_t k = 0; k < ctx_rows * vocab_size; k++) count_table[k] = 1u;
+    css_opt_seed_bigrams(count_table, vocab_size, vocab);
+
+    /* AE encode */
+    uint32_t lo   = 0;
+    uint32_t hi   = 0xFFFFFFFFu;
+    int      pend = 0;
+    size_t   ctx  = vocab_size;  /* start-of-sequence sentinel row */
+
+    for (int t = 0; t < arr->count; t++) {
+        const CSSToken*       tok = &arr->tokens[t];
+        const CSSTokenizable* src;
+        int srcSize;
+        if      (tok->type == 0) { src = tok->data.rule.ruleTokens;         srcSize = tok->data.rule.ruleTokenSize; }
+        else if (tok->type == 1) { src = tok->data.atRule.atRuleTokens;     srcSize = tok->data.atRule.atRuleTokenSize; }
+        else                     { src = tok->data.comment.commentTokens;   srcSize = tok->data.comment.commentTokenSize; }
+
+        for (int i = 0; i < srcSize; i++) {
+            int sym = css_opt_find_sym(vocab, vocab_size, src[i].isPattern, src[i].flag);
+            if (sym < 0) {
+                free(count_table); free(buffer); free(vocab);
+                return NULL;
+            }
+
+            uint32_t* row = count_table + ctx * vocab_size;
+            uint32_t  s_low, s_high;
+            css_opt_cum_bounds(row, vocab_size, (size_t)sym, &s_low, &s_high);
+
+            uint64_t range = (uint64_t)(hi - lo) + 1;
+            hi = lo + (uint32_t)(range * s_high / CSS_AE_SCALE) - 1;
+            lo = lo + (uint32_t)(range * s_low  / CSS_AE_SCALE);
+
+            ae_renorm_enc(&lo, &hi, &pend, buffer, &bp);
+
+            row[(size_t)sym]++;
+            ctx = (size_t)sym;
+        }
+    }
+    ae_flush_enc(lo, pend, buffer, &bp);
+    free(count_table);
+    free(vocab);
+
+    *outSize = (bp + 7) / 8;
+    return buffer;
+}
+
+/* ── css_decode_opt ─────────────────────────────────────────────────────── */
+
+CSSTokenArray* css_decode_opt(const unsigned char* buffer, size_t bufferSize) {
+    if (!buffer || bufferSize == 0) {
+        CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+        return arr;
+    }
+
+    size_t total_bits = bufferSize * 8;
+    size_t bp = 0;
+
+    if (bp + 13 > total_bits) return NULL;
+    size_t total = get_bits(buffer, bp, 13); bp += 13;
+
+    if (bp + 11 > total_bits) return NULL;
+    size_t vocab_size = get_bits(buffer, bp, 11); bp += 11;
+
+    if (vocab_size == 0 || total == 0) {
+        CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+        return arr;
+    }
+
+    CSSOptVocabEntry* vocab = (CSSOptVocabEntry*)malloc(vocab_size * sizeof(CSSOptVocabEntry));
+    if (!vocab) return NULL;
+
+    for (size_t i = 0; i < vocab_size; i++) {
+        if (bp >= total_bits) { free(vocab); return NULL; }
+        unsigned int isp = get_bit(buffer, bp); bp += 1;
+        if (isp) {
+            if (bp + 11 > total_bits) { free(vocab); return NULL; }
+            vocab[i].isPattern = true;
+            vocab[i].flag      = (unsigned short)get_bits(buffer, bp, 11);
+            bp += 11;
+        } else {
+            if (bp + 7 > total_bits) { free(vocab); return NULL; }
+            vocab[i].isPattern = false;
+            vocab[i].flag      = (unsigned short)(get_bits(buffer, bp, 7) + 32u);
+            bp += 7;
+        }
+    }
+
+    if (bp + 9 > total_bits) { free(vocab); return NULL; }
+    size_t tokenCount = get_bits(buffer, bp, 9); bp += 9;
+
+    if (tokenCount == 0 || tokenCount > CSS_MAX_TOKENS) {
+        free(vocab);
+        CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+        return arr;
+    }
+
+    int types[CSS_MAX_TOKENS];
+    int sizes[CSS_MAX_TOKENS];
+    for (size_t t = 0; t < tokenCount; t++) {
+        if (bp + 12 > total_bits) { free(vocab); return NULL; }
+        types[t] = (int)get_bits(buffer, bp, 2);  bp += 2;
+        sizes[t] = (int)get_bits(buffer, bp, 10); bp += 10;
+    }
+
+    /* Initialise count table with same Laplace + bigram seeding as encoder */
+    size_t    ctx_rows    = vocab_size + 1;
+    uint32_t* count_table = (uint32_t*)malloc(ctx_rows * vocab_size * sizeof(uint32_t));
+    if (!count_table) { free(vocab); return NULL; }
+    for (size_t k = 0; k < ctx_rows * vocab_size; k++) count_table[k] = 1u;
+    css_opt_seed_bigrams(count_table, vocab_size, vocab);
+
+    /* Prime code register: first 32 bits MSB-first from AE stream */
+    uint32_t code = 0;
+    for (int b = 31; b >= 0; b--)
+        code |= (uint32_t)ae_read_bit_safe(buffer, bp++, total_bits) << b;
+
+    /* Phase 1: AE decode the flat CSSTokenizable sequence */
+    CSSTokenizable* flat = (CSSTokenizable*)malloc(total * sizeof(CSSTokenizable));
+    if (!flat) { free(count_table); free(vocab); return NULL; }
+
+    uint32_t lo  = 0;
+    uint32_t hi  = 0xFFFFFFFFu;
+    size_t   ctx = vocab_size;  /* start-of-sequence sentinel */
+    size_t decoded = 0;
+
+    for (size_t i = 0; i < total; i++) {
+        uint32_t* row    = count_table + ctx * vocab_size;
+        uint64_t  range  = (uint64_t)(hi - lo) + 1;
+        uint32_t  scaled = (uint32_t)(((uint64_t)(code - lo + 1) * CSS_AE_SCALE - 1) / range);
+
+        int sym = css_opt_find_sym_for_scaled(row, vocab_size, scaled);
+        if (sym < 0) {
+            fprintf(stderr, "[CSS opt] Decode error at step %zu\n", i);
+            break;
+        }
+        flat[decoded].isPattern = vocab[sym].isPattern;
+        flat[decoded].flag      = vocab[sym].flag;
+        decoded++;
+
+        uint32_t s_low, s_high;
+        css_opt_cum_bounds(row, vocab_size, (size_t)sym, &s_low, &s_high);
+        hi = lo + (uint32_t)(range * s_high / CSS_AE_SCALE) - 1;
+        lo = lo + (uint32_t)(range * s_low  / CSS_AE_SCALE);
+
+        ae_renorm_dec(&lo, &hi, &code, buffer, &bp, total_bits);
+
+        row[(size_t)sym]++;
+        ctx = (size_t)sym;
+    }
+    free(count_table);
+    free(vocab);
+
+    /* Phase 2: distribute flat tokens back into CSSTokenArray
+     * (identical sentinel-parsing logic to css_decode_ae)         */
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    if (!arr) { free(flat); return NULL; }
+
+    size_t pos = 0;
+    for (size_t t = 0; t < tokenCount; t++) {
+        if ((int)arr->count >= CSS_MAX_TOKENS) break;
+        CSSToken* out = &arr->tokens[arr->count++];
+        out->type = types[t];
+        int sz = sizes[t];
+
+        if (types[t] == 1) {
+            int copied = 0;
+            while (copied < sz && pos < decoded && copied < CSS_MAX_TOKENIZABLE)
+                out->data.atRule.atRuleTokens[copied++] = flat[pos++];
+            out->data.atRule.atRuleTokenSize = copied;
+        } else if (types[t] == 2) {
+            int copied = 0;
+            while (copied < sz && pos < decoded && copied < CSS_MAX_TOKENIZABLE)
+                out->data.comment.commentTokens[copied++] = flat[pos++];
+            out->data.comment.commentTokenSize = copied;
+        } else {
+            /* type 0 (rule): rebuild from sentinel characters */
+            out->data.rule.ruleTokenSize    = 0;
+            out->data.rule.selectorTokenSize = 0;
+            out->data.rule.propertyCount     = 0;
+
+            int  totalRead    = 0;
+            bool inSelector   = true;
+            int  propNameSize = 0;
+            CSSTokenizable propNameBuf[CSS_MAX_TOKENIZABLE];
+            int  propValSize  = 0;
+            CSSTokenizable propValBuf[CSS_MAX_TOKENIZABLE];
+            bool inName = false;
+
+            while (totalRead < sz && pos < decoded) {
+                CSSTokenizable ct = flat[pos++];
+                totalRead++;
+
+                if (out->data.rule.ruleTokenSize < CSS_MAX_TOKENIZABLE)
+                    out->data.rule.ruleTokens[out->data.rule.ruleTokenSize++] = ct;
+
+                if (!ct.isPattern) {
+                    unsigned char ch = (unsigned char)ct.flag;
+                    if (ch == '{' && inSelector) {
+                        inSelector = false; inName = true;
+                        propNameSize = propValSize = 0;
+                        continue;
+                    }
+                    if (ch == ':' && !inSelector && inName) {
+                        inName = false; propValSize = 0;
+                        continue;
+                    }
+                    if (ch == ';' && !inSelector && !inName) {
+                        if (out->data.rule.propertyCount < CSS_MAX_PROPERTIES) {
+                            CSSProperty* pr =
+                                &out->data.rule.properties[out->data.rule.propertyCount++];
+                            pr->nameTokenSize = propNameSize;
+                            for (int k = 0; k < propNameSize; k++)
+                                pr->nameTokens[k] = propNameBuf[k];
+                            pr->valueTokenSize = propValSize;
+                            for (int k = 0; k < propValSize; k++)
+                                pr->valueTokens[k] = propValBuf[k];
+                        }
+                        propNameSize = propValSize = 0; inName = true;
+                        continue;
+                    }
+                    if (ch == '}' && !inSelector) break;
+                }
+
+                if (inSelector) {
+                    if (out->data.rule.selectorTokenSize < CSS_MAX_TOKENIZABLE)
+                        out->data.rule.selectorTokens[out->data.rule.selectorTokenSize++] = ct;
+                } else if (inName) {
+                    if (propNameSize < CSS_MAX_TOKENIZABLE) propNameBuf[propNameSize++] = ct;
+                } else {
+                    if (propValSize  < CSS_MAX_TOKENIZABLE) propValBuf[propValSize++]   = ct;
+                }
+            }
+        }
+    }
+
+    free(flat);
+    return arr;
+}
