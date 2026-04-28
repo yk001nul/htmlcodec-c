@@ -2,6 +2,11 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
+
+/* Use bitmap vocab header when vocab_size is large enough that the fixed
+ * 502+256=758-bit overhead beats per-entry encoding (~9.7 bits/entry). */
+#define CLJS_BITMAP_THRESHOLD 80
 
 /* ── Bit I/O helpers ──────────────────────────────────────────────────────── */
 
@@ -103,15 +108,6 @@ typedef struct {
     unsigned short flag;
 } CLJSVocabEntry;
 
-static int cljs_find_sym(const CLJSVocabEntry* vocab, size_t vocab_size,
-                         bool isPattern, unsigned short flag) {
-    for (size_t i = 0; i < vocab_size; i++) {
-        if (vocab[i].isPattern == isPattern && vocab[i].flag == flag)
-            return (int)i;
-    }
-    return -1;
-}
-
 /* Compute [cum_low, cum_high) for symbol sym in given count row. */
 static void cljs_cum_bounds(const uint32_t* row, size_t vocab_size, size_t sym,
                             uint32_t* out_low, uint32_t* out_high) {
@@ -150,6 +146,220 @@ static int cljs_find_sym_for_scaled(const uint32_t* row, size_t vocab_size,
     return -1;
 }
 
+/* ── JS structural bigram seeding ─────────────────────────────────────────── */
+
+static void cljs_seed_count_table(uint32_t* count_table, size_t vocab_size,
+                                   const CLJSVocabEntry* vocab) {
+    /* Locate single-character ASCII context tokens */
+    int v_semi = -1, v_obrace = -1, v_cbrace = -1;
+    int v_space = -1, v_newline = -1, v_oparen = -1, v_cparen = -1;
+    int v_dot = -1, v_comma = -1, v_eq = -1, v_obracket = -1;
+
+    for (size_t i = 0; i < vocab_size; i++) {
+        if (vocab[i].isPattern) continue;
+        unsigned short fl = vocab[i].flag;
+        if      (fl == ';')  v_semi     = (int)i;
+        else if (fl == '{')  v_obrace   = (int)i;
+        else if (fl == '}')  v_cbrace   = (int)i;
+        else if (fl == ' ')  v_space    = (int)i;
+        else if (fl == '\n') v_newline  = (int)i;
+        else if (fl == '(')  v_oparen   = (int)i;
+        else if (fl == ')')  v_cparen   = (int)i;
+        else if (fl == '.')  v_dot      = (int)i;
+        else if (fl == ',')  v_comma    = (int)i;
+        else if (fl == '=')  v_eq       = (int)i;
+        else if (fl == '[')  v_obracket = (int)i;
+    }
+
+/* Only seeds a single specific cell — no loop dilution. */
+#define SEED(row_idx, col_idx, amt) \
+    do { if ((row_idx) >= 0 && (col_idx) >= 0) \
+         count_table[(size_t)(row_idx) * vocab_size + (size_t)(col_idx)] += (amt); } while(0)
+
+    /* ── High-volume ASCII transitions ── */
+    /* After '\n': indentation space is by far most common */
+    SEED(v_newline, v_space,   200);
+    SEED(v_newline, v_cbrace,   50); /* closing block at start of line */
+    SEED(v_newline, v_newline,  20); /* blank lines */
+
+    /* After ';': newline almost always follows in formatted code */
+    SEED(v_semi, v_newline, 120);
+    SEED(v_semi, v_space,    20);
+    SEED(v_semi, v_cbrace,   15);
+
+    /* After '}': newline most common; nested } or ; occasionally */
+    SEED(v_cbrace, v_newline, 120);
+    SEED(v_cbrace, v_cbrace,   30);
+    SEED(v_cbrace, v_semi,     15);
+    SEED(v_cbrace, v_space,    15);
+
+    /* After '{': newline almost always follows in block bodies */
+    SEED(v_obrace, v_newline, 100);
+    SEED(v_obrace, v_space,    20); /* one-liner objects: { key: val } */
+
+    /* After ',': space then next element */
+    SEED(v_comma, v_space,   150);
+    SEED(v_comma, v_newline,  20);
+
+    /* After ' ': another space (indentation) or open paren are common */
+    SEED(v_space, v_space,   80);
+    SEED(v_space, v_oparen,  10);
+
+    /* After '(': closing ')' (empty call) or expression */
+    SEED(v_oparen, v_cparen, 30);
+
+    /* After '=' (bare equals): space */
+    SEED(v_eq, v_space,    80);
+    SEED(v_eq, v_oparen,   20);
+    SEED(v_eq, v_obracket, 15);
+    SEED(v_eq, v_obrace,   10);
+
+    /* After ')': space, '{', or ';' */
+    SEED(v_cparen, v_space,   60);
+    SEED(v_cparen, v_obrace,  40);
+    SEED(v_cparen, v_semi,    30);
+    SEED(v_cparen, v_newline, 20);
+    SEED(v_cparen, v_dot,     15);
+
+    /* ── Pattern context rows: only targeted single-cell seeds ── */
+    for (size_t ctx = 0; ctx < vocab_size; ctx++) {
+        if (!vocab[ctx].isPattern) continue;
+        const char* cp   = CL_JS_EN_PATTERNS[vocab[ctx].flag];
+        size_t      clen = strlen(cp);
+
+        /* Declaration keywords → space (almost certain) */
+        if (strcmp(cp, "const") == 0 || strcmp(cp, "let") == 0 ||
+            strcmp(cp, "var")   == 0) {
+            SEED((int)ctx, v_space, 200);
+        }
+        /* function → space (named) or '(' (anonymous) */
+        else if (strcmp(cp, "function") == 0) {
+            SEED((int)ctx, v_space,  150);
+            SEED((int)ctx, v_oparen,  60);
+        }
+        else if (strcmp(cp, "async function ") == 0) {
+            SEED((int)ctx, v_space, 150);
+        }
+        /* return → space or ';' */
+        else if (strcmp(cp, "return") == 0) {
+            SEED((int)ctx, v_space,  120);
+            SEED((int)ctx, v_semi,    40);
+            SEED((int)ctx, v_oparen,  25);
+        }
+        /* this → '.' (almost always in JS class bodies) */
+        else if (strcmp(cp, "this") == 0) {
+            SEED((int)ctx, v_dot, 250);
+        }
+        /* new → space then constructor */
+        else if (strcmp(cp, "new") == 0) {
+            SEED((int)ctx, v_space, 200);
+        }
+        /* class / class  → space then name */
+        else if (strcmp(cp, "class") == 0 || strcmp(cp, "class ") == 0) {
+            SEED((int)ctx, v_space, 180);
+        }
+        /* import → space or '{' */
+        else if (strcmp(cp, "import") == 0) {
+            SEED((int)ctx, v_space,  100);
+            SEED((int)ctx, v_obrace,  50);
+        }
+        /* export → space */
+        else if (strcmp(cp, "export") == 0) {
+            SEED((int)ctx, v_space, 150);
+        }
+        /* await → space */
+        else if (strcmp(cp, "await") == 0 || strcmp(cp, "await ") == 0) {
+            SEED((int)ctx, v_space, 180);
+        }
+        /* if / for / while / switch → space or '(' */
+        else if (strcmp(cp, "if") == 0 || strcmp(cp, "for") == 0 ||
+                 strcmp(cp, "while") == 0 || strcmp(cp, "switch") == 0) {
+            SEED((int)ctx, v_space,  100);
+            SEED((int)ctx, v_oparen,  80);
+        }
+        /* extends / throw → space */
+        else if (strcmp(cp, "extends") == 0 || strcmp(cp, "extends ") == 0 ||
+                 strcmp(cp, "throw")   == 0) {
+            SEED((int)ctx, v_space, 150);
+        }
+        /* Compound patterns ending in '{': newline then indent */
+        else if (clen > 0 && cp[clen - 1] == '{') {
+            SEED((int)ctx, v_newline, 100);
+            SEED((int)ctx, v_space,    40);
+        }
+        /* Compound patterns ending in ';': newline follows */
+        else if (clen > 0 && cp[clen - 1] == ';') {
+            SEED((int)ctx, v_newline, 120);
+            SEED((int)ctx, v_space,    20);
+        }
+        /* "} else"/"} catch"/"} finally": space then '{' */
+        else if (strncmp(cp, "} else",    6) == 0 ||
+                 strncmp(cp, "} catch",   7) == 0 ||
+                 strncmp(cp, "} finally", 9) == 0) {
+            SEED((int)ctx, v_space,  80);
+            SEED((int)ctx, v_obrace, 60);
+        }
+        /* method-call chains ending in ')': ';', newline, or another '.' */
+        else if (clen > 1 && cp[0] == '.' && cp[clen - 1] == ')') {
+            SEED((int)ctx, v_semi,    50);
+            SEED((int)ctx, v_newline, 30);
+            SEED((int)ctx, v_space,   20);
+        }
+        /* Operator patterns with spaces (" = ", " === ", etc.) */
+        else if (clen > 2 && cp[0] == ' ' && cp[clen - 1] == ' ') {
+            SEED((int)ctx, v_oparen, 15);
+            SEED((int)ctx, v_obrace, 10);
+        }
+        /* import { / export { → space then identifier */
+        else if (strcmp(cp, "import {") == 0 || strcmp(cp, "export {") == 0) {
+            SEED((int)ctx, v_space, 200);
+        }
+    }
+
+    /* After '.' → method-call patterns starting with '.' */
+    if (v_dot >= 0) {
+        for (size_t j = 0; j < vocab_size; j++) {
+            if (!vocab[j].isPattern) continue;
+            const char* jp = CL_JS_EN_PATTERNS[vocab[j].flag];
+            if (jp[0] == '.') count_table[(size_t)v_dot * vocab_size + j] += 50;
+        }
+    }
+
+    /* After '}' compound patterns: seed "} else/catch/finally" targets */
+    if (v_cbrace >= 0) {
+        for (size_t j = 0; j < vocab_size; j++) {
+            if (!vocab[j].isPattern) continue;
+            const char* jp = CL_JS_EN_PATTERNS[vocab[j].flag];
+            if (strncmp(jp, "} else",    6) == 0 ||
+                strncmp(jp, "} catch",   7) == 0 ||
+                strncmp(jp, "} finally", 9) == 0) {
+                count_table[(size_t)v_cbrace * vocab_size + j] += 60;
+            }
+        }
+    }
+
+    /* Start-of-sequence → module-level statement starters */
+    {
+        uint32_t* row = count_table + vocab_size * vocab_size;
+        for (size_t j = 0; j < vocab_size; j++) {
+            if (!vocab[j].isPattern) continue;
+            const char* jp = CL_JS_EN_PATTERNS[vocab[j].flag];
+            if (strcmp(jp, "import") == 0 || strcmp(jp, "export") == 0 ||
+                strcmp(jp, "function") == 0 || strcmp(jp, "class") == 0 ||
+                strcmp(jp, "const") == 0   || strcmp(jp, "let") == 0   ||
+                strncmp(jp, "import {", 8)         == 0 ||
+                strncmp(jp, "export default ",  15) == 0 ||
+                strncmp(jp, "export const ",    13) == 0 ||
+                strncmp(jp, "export function ", 16) == 0 ||
+                strncmp(jp, "async function ",  15) == 0) {
+                row[j] += 30;
+            }
+        }
+    }
+
+#undef SEED
+}
+
 /* ── cljs_encode_ae_opt ───────────────────────────────────────────────────── */
 
 unsigned char* cljs_encode_ae_opt(const CLJSTokenArray* arr, size_t count,
@@ -159,78 +369,126 @@ unsigned char* cljs_encode_ae_opt(const CLJSTokenArray* arr, size_t count,
         return NULL;
     }
 
-    /* Pass 1: build first-appearance vocabulary */
-    CLJSVocabEntry vocab[CL_JS_EN_MAX_TOKENS];
-    size_t vocab_size = 0;
+    /* ── Build bitmaps and sorted vocab ── */
+    unsigned char pat_bmp[64] = {0}; /* 502 bits: which sorted-pattern indices used */
+    unsigned char asc_bmp[32] = {0}; /* 256 bits: which ASCII byte values used */
 
     for (size_t i = 0; i < count; i++) {
-        bool           isp  = arr->tokens[i].isPattern;
-        unsigned short flag = arr->tokens[i].flag;
-        if (cljs_find_sym(vocab, vocab_size, isp, flag) < 0) {
-            vocab[vocab_size].isPattern = isp;
-            vocab[vocab_size].flag      = flag;
+        if (arr->tokens[i].isPattern) {
+            unsigned short f = arr->tokens[i].flag;
+            pat_bmp[f >> 3] |= (unsigned char)(1u << (f & 7));
+        } else {
+            unsigned char f = (unsigned char)arr->tokens[i].flag;
+            asc_bmp[f >> 3] |= (unsigned char)(1u << (f & 7));
+        }
+    }
+
+    /* Vocab in sorted order: patterns (flag 0..501 ascending) then ASCII (0..255) */
+    CLJSVocabEntry vocab[CL_JS_EN_PATTERN_COUNT + 256];
+    int pat_rank[CL_JS_EN_PATTERN_COUNT]; /* flag → vocab index, -1 if absent */
+    int asc_rank[256];
+    size_t vocab_size = 0;
+
+    for (int i = 0; i < CL_JS_EN_PATTERN_COUNT; i++) {
+        if (pat_bmp[i >> 3] & (1u << (i & 7))) {
+            pat_rank[i] = (int)vocab_size;
+            vocab[vocab_size].isPattern = true;
+            vocab[vocab_size].flag      = (unsigned short)i;
             vocab_size++;
-            if (vocab_size >= CL_JS_EN_MAX_TOKENS) break;
+        } else {
+            pat_rank[i] = -1;
+        }
+    }
+    for (int i = 0; i < 256; i++) {
+        if (asc_bmp[i >> 3] & (1u << (i & 7))) {
+            asc_rank[i] = (int)vocab_size;
+            vocab[vocab_size].isPattern = false;
+            vocab[vocab_size].flag      = (unsigned short)i;
+            vocab_size++;
+        } else {
+            asc_rank[i] = -1;
         }
     }
 
     if (vocab_size == 0) { *outSize = 0; return NULL; }
 
-    /* Count pattern tokens for caseStyle side-channel */
+    /* ── Count digraph tokens for caseStyle side-channel ── */
     size_t sc_count = 0;
     for (size_t i = 0; i < count; i++)
-        if (arr->tokens[i].isPattern) sc_count++;
+        if (arr->tokens[i].isPattern &&
+            CL_JS_EN_PATTERN_IS_DIGRAPH[arr->tokens[i].flag])
+            sc_count++;
 
-    /* Allocate output buffer (conservative worst-case) */
-    size_t header_bits = 13 + 10 + vocab_size * 10 + 13 + sc_count * 2;
-    size_t ae_bits     = count * 32 + 64;
-    size_t buf_bytes   = (header_bits + ae_bits + 7) / 8;
+    /* ── Choose header format ── */
+    int use_bmp = (vocab_size >= CLJS_BITMAP_THRESHOLD) ? 1 : 0;
+
+    /* ── Allocate output buffer (conservative worst-case) ── */
+    size_t hdr_bits = 13 + 1
+        + (use_bmp ? (CL_JS_EN_PATTERN_COUNT + 256)
+                   : (10 + vocab_size * 10))
+        + 13 + sc_count * 2;
+    size_t ae_bits   = count * 32 + 64;
+    size_t buf_bytes = (hdr_bits + ae_bits + 7) / 8;
 
     unsigned char* buffer = (unsigned char*)calloc(buf_bytes, 1);
     if (!buffer) { *outSize = 0; return NULL; }
 
     size_t bit_pos = 0;
 
-    /* Write header */
-    set_bits(buffer, bit_pos, 13, (unsigned int)count);       bit_pos += 13;
-    set_bits(buffer, bit_pos, 10, (unsigned int)vocab_size);   bit_pos += 10;
+    /* ── Write header ── */
+    set_bits(buffer, bit_pos, 13, (unsigned int)count);   bit_pos += 13;
+    set_bits(buffer, bit_pos,  1, (unsigned int)use_bmp); bit_pos +=  1;
 
-    for (size_t i = 0; i < vocab_size; i++) {
-        if (vocab[i].isPattern) {
-            /* 1 + 9 bits (flag 0–511) */
-            set_bits(buffer, bit_pos, 1, 1U);                           bit_pos += 1;
-            set_bits(buffer, bit_pos, 9, (unsigned int)vocab[i].flag);  bit_pos += 9;
-        } else {
-            /* 1 + 8 bits (full byte 0-255, handles non-printable like \n, \t) */
-            set_bits(buffer, bit_pos, 1, 0U);                              bit_pos += 1;
-            set_bits(buffer, bit_pos, 8, (unsigned int)vocab[i].flag & 0xFFu); bit_pos += 8;
+    if (use_bmp) {
+        /* Write 502-bit pattern bitmap */
+        for (int i = 0; i < CL_JS_EN_PATTERN_COUNT; i++)
+            set_bit(buffer, bit_pos + i, (pat_bmp[i >> 3] >> (i & 7)) & 1u);
+        bit_pos += CL_JS_EN_PATTERN_COUNT;
+        /* Write 256-bit ASCII bitmap */
+        for (int i = 0; i < 256; i++)
+            set_bit(buffer, bit_pos + i, (asc_bmp[i >> 3] >> (i & 7)) & 1u);
+        bit_pos += 256;
+    } else {
+        set_bits(buffer, bit_pos, 10, (unsigned int)vocab_size); bit_pos += 10;
+        for (size_t i = 0; i < vocab_size; i++) {
+            if (vocab[i].isPattern) {
+                set_bits(buffer, bit_pos, 1, 1U);                            bit_pos += 1;
+                set_bits(buffer, bit_pos, 9, (unsigned int)vocab[i].flag);   bit_pos += 9;
+            } else {
+                set_bits(buffer, bit_pos, 1, 0U);                                   bit_pos += 1;
+                set_bits(buffer, bit_pos, 8, (unsigned int)vocab[i].flag & 0xFFu);  bit_pos += 8;
+            }
         }
     }
 
-    /* caseStyle side-channel before AE stream */
+    /* ── caseStyle side-channel — digraph pattern tokens only ── */
     set_bits(buffer, bit_pos, 13, (unsigned int)sc_count); bit_pos += 13;
     for (size_t i = 0; i < count; i++) {
-        if (arr->tokens[i].isPattern) {
+        if (arr->tokens[i].isPattern &&
+            CL_JS_EN_PATTERN_IS_DIGRAPH[arr->tokens[i].flag]) {
             set_bits(buffer, bit_pos, 2, (unsigned int)arr->tokens[i].caseStyle);
             bit_pos += 2;
         }
     }
 
-    /* Initialise adaptive order-1 count table: (vocab_size+1) × vocab_size */
-    size_t   ctx_rows   = vocab_size + 1;
+    /* ── Initialise adaptive order-1 count table: (vocab_size+1) × vocab_size ── */
+    size_t    ctx_rows    = vocab_size + 1;
     uint32_t* count_table = (uint32_t*)malloc(ctx_rows * vocab_size * sizeof(uint32_t));
     if (!count_table) { free(buffer); *outSize = 0; return NULL; }
     for (size_t k = 0; k < ctx_rows * vocab_size; k++) count_table[k] = 1u;
 
-    /* AE encode */
+    cljs_seed_count_table(count_table, vocab_size, vocab);
+
+    /* ── AE encode ── */
     uint32_t lo   = 0;
     uint32_t hi   = 0xFFFFFFFFu;
     int      pend = 0;
     size_t   ctx  = vocab_size; /* start-of-sequence sentinel */
 
     for (size_t i = 0; i < count; i++) {
-        int sym = cljs_find_sym(vocab, vocab_size,
-                                arr->tokens[i].isPattern, arr->tokens[i].flag);
+        int sym = arr->tokens[i].isPattern
+                  ? pat_rank[arr->tokens[i].flag]
+                  : asc_rank[(unsigned char)arr->tokens[i].flag];
         if (sym < 0) { free(count_table); free(buffer); *outSize = 0; return NULL; }
 
         uint32_t* row = count_table + ctx * vocab_size;
@@ -268,8 +526,57 @@ CLJSTokenArray* cljs_decode_ae_opt(const unsigned char* buffer, size_t bufferSiz
     if (bit_pos + 13 > total_bits) return NULL;
     size_t count = get_bits(buffer, bit_pos, 13); bit_pos += 13;
 
-    if (bit_pos + 10 > total_bits) return NULL;
-    size_t vocab_size = get_bits(buffer, bit_pos, 10); bit_pos += 10;
+    if (bit_pos + 1 > total_bits) return NULL;
+    int use_bmp = (int)get_bits(buffer, bit_pos, 1); bit_pos += 1;
+
+    CLJSVocabEntry vocab[CL_JS_EN_PATTERN_COUNT + 256];
+    size_t vocab_size = 0;
+
+    if (use_bmp) {
+        /* Read 502-bit pattern bitmap */
+        if (bit_pos + CL_JS_EN_PATTERN_COUNT > total_bits) return NULL;
+        for (int i = 0; i < CL_JS_EN_PATTERN_COUNT; i++) {
+            if (get_bit(buffer, bit_pos + i)) {
+                vocab[vocab_size].isPattern = true;
+                vocab[vocab_size].flag      = (unsigned short)i;
+                vocab_size++;
+            }
+        }
+        bit_pos += CL_JS_EN_PATTERN_COUNT;
+        /* Read 256-bit ASCII bitmap */
+        if (bit_pos + 256 > total_bits) return NULL;
+        for (int i = 0; i < 256; i++) {
+            if (get_bit(buffer, bit_pos + i)) {
+                vocab[vocab_size].isPattern = false;
+                vocab[vocab_size].flag      = (unsigned short)i;
+                vocab_size++;
+            }
+        }
+        bit_pos += 256;
+    } else {
+        if (bit_pos + 10 > total_bits) return NULL;
+        vocab_size = get_bits(buffer, bit_pos, 10); bit_pos += 10;
+        if (vocab_size == 0) {
+            CLJSTokenArray* arr = (CLJSTokenArray*)malloc(sizeof(CLJSTokenArray));
+            if (arr) arr->count = 0;
+            return arr;
+        }
+        for (size_t i = 0; i < vocab_size; i++) {
+            if (bit_pos >= total_bits) return NULL;
+            unsigned int isp = get_bit(buffer, bit_pos); bit_pos += 1;
+            if (isp) {
+                if (bit_pos + 9 > total_bits) return NULL;
+                vocab[i].isPattern = true;
+                vocab[i].flag      = (unsigned short)get_bits(buffer, bit_pos, 9);
+                bit_pos += 9;
+            } else {
+                if (bit_pos + 8 > total_bits) return NULL;
+                vocab[i].isPattern = false;
+                vocab[i].flag      = (unsigned short)get_bits(buffer, bit_pos, 8);
+                bit_pos += 8;
+            }
+        }
+    }
 
     if (vocab_size == 0 || count == 0) {
         CLJSTokenArray* arr = (CLJSTokenArray*)malloc(sizeof(CLJSTokenArray));
@@ -277,33 +584,14 @@ CLJSTokenArray* cljs_decode_ae_opt(const unsigned char* buffer, size_t bufferSiz
         return arr;
     }
 
-    CLJSVocabEntry* vocab = (CLJSVocabEntry*)malloc(vocab_size * sizeof(CLJSVocabEntry));
-    if (!vocab) return NULL;
-
-    for (size_t i = 0; i < vocab_size; i++) {
-        if (bit_pos >= total_bits) { free(vocab); return NULL; }
-        unsigned int isp = get_bit(buffer, bit_pos); bit_pos += 1;
-        if (isp) {
-            if (bit_pos + 9 > total_bits) { free(vocab); return NULL; }
-            vocab[i].isPattern = true;
-            vocab[i].flag      = (unsigned short)get_bits(buffer, bit_pos, 9);
-            bit_pos += 9;
-        } else {
-            if (bit_pos + 8 > total_bits) { free(vocab); return NULL; }
-            vocab[i].isPattern = false;
-            vocab[i].flag      = (unsigned short)get_bits(buffer, bit_pos, 8);
-            bit_pos += 8;
-        }
-    }
-
-    /* Read caseStyle side-channel */
-    if (bit_pos + 13 > total_bits) { free(vocab); return NULL; }
+    /* ── Read caseStyle side-channel (digraph pattern tokens only) ── */
+    if (bit_pos + 13 > total_bits) return NULL;
     size_t sc_count = get_bits(buffer, bit_pos, 13); bit_pos += 13;
 
     int* cs_store = NULL;
     if (sc_count > 0) {
         cs_store = (int*)malloc(sc_count * sizeof(int));
-        if (!cs_store) { free(vocab); return NULL; }
+        if (!cs_store) return NULL;
         for (size_t k = 0; k < sc_count; k++) {
             if (bit_pos + 2 > total_bits) { cs_store[k] = 0; continue; }
             cs_store[k] = (int)get_bits(buffer, bit_pos, 2);
@@ -311,19 +599,21 @@ CLJSTokenArray* cljs_decode_ae_opt(const unsigned char* buffer, size_t bufferSiz
         }
     }
 
-    /* Initialise adaptive order-1 count table */
-    size_t   ctx_rows   = vocab_size + 1;
+    /* ── Initialise adaptive order-1 count table ── */
+    size_t    ctx_rows    = vocab_size + 1;
     uint32_t* count_table = (uint32_t*)malloc(ctx_rows * vocab_size * sizeof(uint32_t));
-    if (!count_table) { free(cs_store); free(vocab); return NULL; }
+    if (!count_table) { free(cs_store); return NULL; }
     for (size_t k = 0; k < ctx_rows * vocab_size; k++) count_table[k] = 1u;
 
-    /* Prime the AE code register with 32 bits MSB-first */
+    cljs_seed_count_table(count_table, vocab_size, vocab);
+
+    /* ── Prime AE code register with 32 bits MSB-first ── */
     uint32_t code = 0;
     for (int b = 31; b >= 0; b--)
         code |= (uint32_t)ae_read_bit_safe(buffer, bit_pos++, total_bits) << b;
 
     CLJSTokenArray* arr = (CLJSTokenArray*)malloc(sizeof(CLJSTokenArray));
-    if (!arr) { free(count_table); free(cs_store); free(vocab); return NULL; }
+    if (!arr) { free(count_table); free(cs_store); return NULL; }
     arr->count = 0;
 
     uint32_t lo  = 0;
@@ -348,7 +638,9 @@ CLJSTokenArray* cljs_decode_ae_opt(const unsigned char* buffer, size_t bufferSiz
 
         arr->tokens[arr->count].isPattern = vocab[sym].isPattern;
         arr->tokens[arr->count].flag      = vocab[sym].flag;
-        arr->tokens[arr->count].caseStyle = 0;
+        /* Non-digraph patterns always have caseStyle=3; digraphs read from side-channel */
+        arr->tokens[arr->count].caseStyle =
+            (vocab[sym].isPattern && !CL_JS_EN_PATTERN_IS_DIGRAPH[vocab[sym].flag]) ? 3 : 0;
         arr->count++;
 
         row[(size_t)sym]++;
@@ -357,16 +649,16 @@ CLJSTokenArray* cljs_decode_ae_opt(const unsigned char* buffer, size_t bufferSiz
 
     free(count_table);
 
-    /* Apply caseStyle side-channel to pattern tokens */
+    /* ── Apply digraph caseStyle side-channel ── */
     if (cs_store) {
         size_t cs_idx = 0;
         for (size_t i = 0; i < arr->count && cs_idx < sc_count; i++) {
-            if (arr->tokens[i].isPattern)
+            if (arr->tokens[i].isPattern &&
+                CL_JS_EN_PATTERN_IS_DIGRAPH[arr->tokens[i].flag])
                 arr->tokens[i].caseStyle = cs_store[cs_idx++];
         }
         free(cs_store);
     }
 
-    free(vocab);
     return arr;
 }

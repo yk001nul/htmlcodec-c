@@ -9,6 +9,8 @@
 
 extern const char* CL_JS_EN_RAW_PATTERNS[CL_JS_EN_PATTERN_COUNT];
 extern const char* CL_JS_EN_PATTERNS[CL_JS_EN_PATTERN_COUNT];
+/* True at sorted position i if that pattern is an English digraph (raw index 160–223) */
+extern bool CL_JS_EN_PATTERN_IS_DIGRAPH[CL_JS_EN_PATTERN_COUNT];
 
 typedef struct {
     bool isPattern;           /* true if matches one of the patterns */

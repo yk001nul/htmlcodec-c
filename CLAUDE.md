@@ -45,7 +45,7 @@ Each module is a self-contained `.h`/`.c` pair:
 | `nl-en-opt` | Extended word-level dictionary and optimised tokenizer, compiled as a separate translation unit (`nl-en-opt.c`). Contains `NL_EN_WORD_PATTERNS[232]` — 232 common English words (4–8 chars) ranked by expected frequency. Word tokens carry flags in `[NL_EN_PATTERN_COUNT, NL_EN_OPT_PATTERN_COUNT)` = `[512, 744)`. `tokenizeEnglishOpt()` performs true longest-match right-to-left over both the 512-entry syllable dictionary and the 232-entry word dictionary; a longer match always beats a shorter one at the same position. Calls `tokenizeEnglish("")` internally on first use to trigger `initialize_patterns()` and populate `NL_EN_PATTERNS`. `NL_EN_WORD_COUNT`=232, `NL_EN_OPT_PATTERN_COUNT`=744. |
 | `nl-en-codec` | Bit-level encoder/decoder for `NLTokenArray`; pattern tokens use variable width 8–16 bits (1 isPattern + 4 bitLength + N index bits + 2 caseStyle), ASCII tokens use 9 bits (1+8). `outSize` reflects actual bits written (rounded up to bytes), not worst-case allocation. Also provides: (a) static-frequency AE codec (`nl_en_encode_ae` / `nl_en_decode_ae`): builds a fixed-point probability table (`AESymbol`, cum bounds scaled to `NL_AE_SCALE`=65536) from the token frequency map, serialised as 13-bit count + 10-bit unique count + 22/18 bits per unique token + variable-length AE bitstream; (b) optimised adaptive AE codec (`nl_en_encode_opt` / `nl_en_decode_opt`): see Encoding Format section below. All codecs are lossless for arbitrary-length sequences (no fixed precision limit). |
 | `cl-javascript-en-tokenizer` | JavaScript tokenizer with a 502-entry pattern dictionary (`CL_JS_EN_PATTERN_COUNT`=502). Eight sections: ES2025 reserved keywords (0–63), common JS library/framework API tokens (64–159), English digraphs (160–223), non-alphanumeric JS digraphs (224–255), JS identifiers/built-ins (256–319), JS method call patterns (320–383), JS operator patterns (384–447), short verb/noun fragments (448–501). `CLJSToken.flag` is `unsigned short` (holds sorted indices 0–501). `tokenizeJavaScript()` performs greedy longest-match left-to-right; `initialize_patterns()` sorts all 502 raw patterns by descending length (longest first) so the first match is always the longest. caseStyle detection runs only for English digraphs (raw indices 160–223); all other patterns use `caseStyle=3` (no change needed). ASCII (non-pattern) tokens use `caseStyle=3`. |
-| `cl-javascript-codec` | Adaptive order-1 AE codec for `CLJSTokenArray`. `cljs_encode_ae_opt()` / `cljs_decode_ae_opt()` — vocab-only header (no static frequency table), Laplace-initialised `count[ctx][sym]` table updated online, order-1 context conditioning. caseStyle stored in a 2-bit-per-pattern-token side-channel in the header (before the AE stream). ASCII tokens store the full 8-bit byte value (not a printable offset) to correctly handle `\n`, `\t`, and other non-printable source characters. See Encoding Format section below. |
+| `cl-javascript-codec` | Adaptive order-1 AE codec for `CLJSTokenArray`. `cljs_encode_ae_opt()` / `cljs_decode_ae_opt()` — adaptive header (bitmap when vocab\_size ≥ 80, per-entry otherwise), Laplace-initialised `count[ctx][sym]` table updated online, order-1 context conditioning. caseStyle stored in a 2-bit-per-digraph-token side-channel before the AE stream. ASCII tokens store the full 8-bit byte value (not a printable offset) to correctly handle `\n`, `\t`, and other non-printable source characters. `CLJS_BITMAP_THRESHOLD`=80. See Encoding Format section below. |
 | `nl-en-us-hyphenator` | Knuth-Liang syllable extractor for US English. Reads `ushyphmax.tex` (4938 patterns) at first call to build a trie; falls back to the embedded `KL_US_HYPHEN_PATTERNS` array if the file is not found. `tokenizeKnuthLiang()` splits input on non-alphanumeric boundaries (using `KL_ASCII_PATTERNS[96]`), lowercases each word, then applies affix stripping before KL hyphenation: `kl_strip_affixes()` attempts to find the longest matching suffix (min length 3, from `KL_EN_SUFFIXES[128]`) that leaves a stem ≥ 3 chars; if found, the longest matching prefix (from `KL_EN_PREFIXES[128]`) is stripped from the stem if at least 3 chars remain. The prefix token (if any), KL-hyphenated stem syllables, and suffix token are emitted in order, all with `isHyphenated=true` and affixes always with `caseStyle=0`. If no suffix matches, normal KL hyphenation runs. Stem syllable case style is derived from the original-cased text. Both `KLTokenArray` (max `KL_MAX_TOKENS`=4096 tokens) and `KLToken` (inline `text[KL_MAX_TOKEN_TEXT=64]`) use fixed-size arrays with no per-token heap allocation. The trie is cached as a module-level static after the first call. `collectKLFrequencies()` takes a completed `KLTokenArray` and returns a heap-allocated `KLFreqMap` containing one `KLStringFreq` entry per unique string (text + frequency count), sorted descending by frequency; `uniqueCount` ≤ `totalTokens` ≤ `KL_MAX_TOKENS`. |
 
 ### Subdata Enrichment
@@ -170,19 +170,29 @@ Best case (heavy repetition): the adaptive model converges quickly and delivers 
 Bit stream structure produced by `cljs_encode_ae_opt` / decoded by `cljs_decode_ae_opt`:
 
 - 13 bits: token count (max `CL_JS_EN_MAX_TOKENS`=8192)
-- 10 bits: vocab size (number of distinct token identities, first-appearance order)
-- Per vocab entry (isPattern=true):  1 (isPattern) + 9 (flag, covers 0–501) = 10 bits
-- Per vocab entry (isPattern=false): 1 (isPattern) + 8 (flag, full byte 0–255) = 9 bits
-- 13 bits: sc\_count (number of pattern tokens in the sequence)
-- sc\_count × 2 bits: caseStyle side-channel, one per pattern token in sequence order
+- 1 bit: `use_bitmap` flag (= 1 when vocab\_size ≥ `CLJS_BITMAP_THRESHOLD`=80, 0 otherwise)
+- **if `use_bitmap`=1 (large vocab — bitmap header):**
+  - 502 bits: pattern-presence bitmap (bit `i` = sorted pattern index `i` appears in sequence)
+  - 256 bits: ASCII-presence bitmap (bit `i` = byte value `i` appears in sequence)
+  - vocab reconstructed in sorted order: patterns 0–501 ascending, then ASCII 0–255
+- **if `use_bitmap`=0 (small vocab — per-entry header):**
+  - 10 bits: vocab\_size
+  - Per vocab entry (isPattern=true): 1 + 9 (sorted flag 0–501) = 10 bits
+  - Per vocab entry (isPattern=false): 1 + 8 (full byte 0–255) = 9 bits
+  - vocab in sorted-flag order (patterns ascending then ASCII ascending)
+- 13 bits: sc\_count (number of DIGRAPH pattern tokens with non-trivial caseStyle)
+- sc\_count × 2 bits: caseStyle side-channel, one per digraph pattern token in sequence order
 - Variable: renormalized adaptive order-1 AE bitstream (E1/E2/E3 bit-emission)
+
+The bitmap header costs a fixed 758 bits (≈ 95 bytes) regardless of vocab size; the per-entry header costs ~9.7 bits × vocab\_size. The threshold of 80 entries is the break-even point. For large JS files (vocab ≈ 129), bitmap format saves ~60 bytes over per-entry encoding.
 
 ASCII tokens use a full 8-bit flag (not a 7-bit printable offset) so that non-printable characters (`\n`, `\t`, etc.) common in JS source code round-trip correctly.
 
 **Adaptive codec design:**
 - **Vocab-only header:** No per-symbol frequency stored; all probability mass is derived online.
 - **Order-1 context model:** `count[ctx][sym]` table, `(vocab_size+1)` rows × `vocab_size` columns, Laplace-initialised to 1. Row `vocab_size` is the start-of-sequence sentinel. Context advances to the last decoded symbol's vocab index after each symbol.
-- **caseStyle side-channel:** Placed before the AE bitstream (at a deterministic bit position) so the decoder reads it correctly. Applied to pattern tokens only; non-pattern ASCII tokens do not store caseStyle (always 3 in the tokenizer, irrelevant for reconstruction).
+- **caseStyle side-channel:** Placed before the AE bitstream (at a deterministic bit position) so the decoder reads it correctly. Applied to DIGRAPH pattern tokens only (raw indices 160–223); all other pattern tokens always have `caseStyle=3`.
+- **JS structural bigram seeding:** Count table pre-warmed with targeted single-cell seeds for common JS transitions: `{`→`\n`, `}`→`\n`, `;`→`\n`, `\n`→space, `,`→space, keyword→space, `this`→`.`, etc. No loop-based seeding to avoid row-total inflation.
 
 ### zlib vs CLJS AE Opt Benchmark
 
@@ -190,10 +200,10 @@ Two benchmark tests compare `cljs_encode_ae_opt` output size against zlib on rea
 
 | Case | Raw input | CLJS AE opt | zlib | Codec reduction |
 |------|-----------|:---:|:---:|:---:|
-| Short | `function add(a, b) { return a + b; } ...` (60 B) | ~41 B | ~65 B | ~32% |
-| Long  | production-like React module (1921 B, 912 tokens) | ~859 B | ~733 B | ~55% |
+| Short | `function add(a, b) { return a + b; } ...` (60 B) | ~40 B | ~65 B | ~33% |
+| Long  | production-like React module (1921 B, 910 tokens) | ~658 B | ~733 B | ~66% |
 
-The short case already beats zlib even below 100 bytes because the adaptive model converges quickly. The long case (1921 B, ≥ 1024 B target) achieves **55.3% reduction**, within striking distance of zlib's 61.8%. Best case (highly repetitive function calls) achieves **72.4% reduction**.
+The short case already beats zlib below 100 bytes. The long case (1921 B, ≥ 1024 B target) achieves **65.7% reduction**, beating zlib's 61.8%. Best case (highly repetitive function calls) achieves **73.2% reduction**. The bitmap vocab header is the key enabler: for vocab\_size=129 it replaces ~1250 per-entry bits with a fixed 758-bit bitmap, saving ~62 bytes on the header alone.
 
 ### Test Structure
 

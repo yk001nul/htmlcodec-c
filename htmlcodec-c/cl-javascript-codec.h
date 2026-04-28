@@ -13,15 +13,20 @@
  *
  * Bit stream layout:
  *   13 bits : token count (max CL_JS_EN_MAX_TOKENS = 8192)
- *   10 bits : vocab size (number of distinct token identities, first-appearance order)
- *   Per vocab entry (isPattern=true):  1 (isPattern) + 9 (flag, covers 0–511) = 10 bits
- *   Per vocab entry (isPattern=false): 1 (isPattern) + 8 (flag, full byte 0–255)  =  9 bits
- *   13 bits : sc_count (number of pattern tokens = number of caseStyle values)
- *   sc_count × 2 bits: caseStyle side-channel, one per pattern token in sequence order
+ *    1 bit  : use_bitmap (= 1 when vocab_size >= CLJS_BITMAP_THRESHOLD=80)
+ *   if use_bitmap=1 (large vocab — bitmap header):
+ *     502 bits : pattern-presence bitmap (bit i = sorted pattern index i present)
+ *     256 bits : ASCII-presence bitmap   (bit i = byte value i present)
+ *   if use_bitmap=0 (small vocab — per-entry header):
+ *     10 bits : vocab size
+ *     Per pattern entry : 1 (isPattern) + 9 (flag 0–501) = 10 bits
+ *     Per ASCII entry   : 1 (isPattern) + 8 (flag 0–255) =  9 bits
+ *   13 bits : sc_count (DIGRAPH pattern tokens with stored caseStyle)
+ *   sc_count × 2 bits : caseStyle side-channel (digraph tokens only, in sequence order)
  *   Variable : renormalized adaptive order-1 AE bitstream (E1/E2/E3 bit-emission)
  *
- * The caseStyle side-channel is written before the AE stream so the decoder
- * reads it at a deterministic bit position.
+ * Vocab is always in sorted order: patterns 0–501 ascending, then ASCII 0–255.
+ * The bitmap header saves ~62 bytes vs per-entry when vocab_size ≈ 129.
  *
  * The adaptive model uses a count[ctx][sym] table (Laplace-initialised to 1)
  * updated online after each encoded symbol.  ctx = vocab_size is the

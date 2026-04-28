@@ -56,8 +56,8 @@ const char* CL_JS_EN_RAW_PATTERNS[CL_JS_EN_PATTERN_COUNT] = {
     "router","service","component","element","input","output","message","promise",
     "resolve","reject","constructor","prototype","undefined","arguments","Infinity",
     "toString","valueOf","isArray","parseInt","parseFloat","payload","selector",
-    "attribute","property","method","parameter","variable","constant","boolean",
-    "integer","object","module","string","number","array","function","stream",
+    "attribute","property","method","parameter","variable","constant","length",
+    "integer","object","module","string","number","array","size","stream",
 
     /* 6) 64 common JS short method calls and API patterns (320–383) */
     ".then(",".catch(",".finally(",".map(",".filter(",".reduce(",".find(",".findIndex(",
@@ -77,26 +77,26 @@ const char* CL_JS_EN_RAW_PATTERNS[CL_JS_EN_PATTERN_COUNT] = {
     "if (","} else {","} else if (","for (let ","for (const ","for (var ",
     "while (","switch (","case ","default:","break;","continue;","return;",
     "const {","let {","const [","let [","...rest","...args","...props",
-    "null","true","false","void 0",
+    " ? "," : ","typeof ","void 0",
     "(function(","})()","});",
     "import {","import * as ","export default ","export const ","export function ",
     "class ","extends ","super(","this.","self.","window.","global.",
     " = "," + "," - "," * "," / ",
 
     /* 8) 64 common short verb/noun fragments for JS identifiers (448–511) */
-    "get","set","has","add","run","log","use","try","put","end",
+    "get","set","has","add","run","log","use","emit","put","end",
     "init","bind","find","sort","push","pull","send","read","load","save","copy","move",
-    "create","delete","update","insert","select","remove","handle","manage","process","render",
-    "listen","watch","check","parse","build","fetch","queue","flush","reset","clear",
+    "create","filter","update","insert","select","remove","handle","manage","process","render",
+    "listen","watch","check","parse","build","map","queue","flush","reset","clear",
     "open","close","start","stop","pause","connect","encode","decode","sign","verify",
-    "async","await","yield","throw","catch","break","return","export","import","class"
+    "async","next","clone","merge","test","wrap","track","mount","invoke","toggle"
 };
 
 const char* CL_JS_EN_PATTERNS[CL_JS_EN_PATTERN_COUNT];
 
 static bool patternsInitialized = false;
 static size_t minPatternLen = 0;
-static bool patternIsDigraph[CL_JS_EN_PATTERN_COUNT] = { false };
+bool CL_JS_EN_PATTERN_IS_DIGRAPH[CL_JS_EN_PATTERN_COUNT] = { false };
 
 static int compare_pattern_length_desc(const void* a, const void* b) {
     int ia = *(const int*)a;
@@ -153,7 +153,7 @@ static void initialize_patterns(void) {
         const char* p = CL_JS_EN_RAW_PATTERNS[indices[i]];
         CL_JS_EN_PATTERNS[i] = p;
         /* English digraphs are raw indices 160–223 */
-        patternIsDigraph[i] = (indices[i] >= 160 && indices[i] < 224);
+        CL_JS_EN_PATTERN_IS_DIGRAPH[i] = (indices[i] >= 160 && indices[i] < 224);
         size_t l = strlen(p);
         if (l < minPatternLen) minPatternLen = l;
     }
@@ -192,7 +192,7 @@ CLJSTokenArray* tokenizeJavaScript(const char* input) {
 
         if (matched) {
             int style = 3;
-            if (patternIsDigraph[matchedIndex]) {
+            if (CL_JS_EN_PATTERN_IS_DIGRAPH[matchedIndex]) {
                 style = detect_case_style(input + pos, matchedLen);
             }
             CLJSToken token = {true, matchedIndex, style};
