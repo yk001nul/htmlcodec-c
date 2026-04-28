@@ -2475,6 +2475,408 @@ void test_css_ae_codec_long_rule(void) {
     free(arr);
 }
 
+/* ── CSS optimised codec tests (Steps 1-3) ─────────────────────────────── */
+
+/* Helper: compare two CSSTokenArrays for structural equality.
+ * Checks type, ruleTokenSize/atRuleTokenSize/commentTokenSize,
+ * propertyCount, selectorTokenSize, and every CSSTokenizable flag.   */
+static bool css_token_arrays_equal(const CSSTokenArray* a, const CSSTokenArray* b) {
+    if (a->count != b->count) return false;
+    for (int t = 0; t < a->count; t++) {
+        const CSSToken* ta = &a->tokens[t];
+        const CSSToken* tb = &b->tokens[t];
+        if (ta->type != tb->type) return false;
+        if (ta->type == 0) {
+            if (ta->data.rule.ruleTokenSize != tb->data.rule.ruleTokenSize) return false;
+            if (ta->data.rule.selectorTokenSize != tb->data.rule.selectorTokenSize) return false;
+            if (ta->data.rule.propertyCount != tb->data.rule.propertyCount) return false;
+            for (int i = 0; i < ta->data.rule.ruleTokenSize; i++) {
+                if (ta->data.rule.ruleTokens[i].isPattern !=
+                    tb->data.rule.ruleTokens[i].isPattern) return false;
+                if (ta->data.rule.ruleTokens[i].flag !=
+                    tb->data.rule.ruleTokens[i].flag) return false;
+            }
+        } else if (ta->type == 1) {
+            if (ta->data.atRule.atRuleTokenSize != tb->data.atRule.atRuleTokenSize)
+                return false;
+            for (int i = 0; i < ta->data.atRule.atRuleTokenSize; i++) {
+                if (ta->data.atRule.atRuleTokens[i].isPattern !=
+                    tb->data.atRule.atRuleTokens[i].isPattern) return false;
+                if (ta->data.atRule.atRuleTokens[i].flag !=
+                    tb->data.atRule.atRuleTokens[i].flag) return false;
+            }
+        } else {
+            if (ta->data.comment.commentTokenSize != tb->data.comment.commentTokenSize)
+                return false;
+            for (int i = 0; i < ta->data.comment.commentTokenSize; i++) {
+                if (ta->data.comment.commentTokens[i].isPattern !=
+                    tb->data.comment.commentTokens[i].isPattern) return false;
+                if (ta->data.comment.commentTokens[i].flag !=
+                    tb->data.comment.commentTokens[i].flag) return false;
+            }
+        }
+    }
+    return true;
+}
+
+/* Round-trip: short stylesheet with repeated property (exercises bigram seeding
+ * and verifies that encode -> decode is lossless for a simple input).         */
+void test_css_opt_codec_roundtrip(void) {
+    const char* css = "body { color: red; color: red; }";
+
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS opt roundtrip: alloc");
+    if (!arr) return;
+    parseCSS(css, arr);
+    assert_true(arr->count > 0, "CSS opt roundtrip: parsed tokens > 0");
+
+    size_t enc_size = 0;
+    unsigned char* enc = css_encode_opt(arr, &enc_size);
+    assert_true(enc != NULL, "CSS opt roundtrip: encode non-NULL");
+    assert_true(enc_size > 0, "CSS opt roundtrip: encoded size > 0");
+
+    if (!enc) { free(arr); return; }
+
+    CSSTokenArray* dec = css_decode_opt(enc, enc_size);
+    assert_true(dec != NULL, "CSS opt roundtrip: decode non-NULL");
+
+    if (dec) {
+        assert_equal_int(dec->count, arr->count,
+                         "CSS opt roundtrip: decoded token count matches");
+        assert_true(css_token_arrays_equal(arr, dec),
+                    "CSS opt roundtrip: all tokenizables match losslessly");
+        free(dec);
+    }
+
+    printf("PASS CSS opt codec - short round-trip (\"%s\", %zu bytes encoded)\n",
+           css, enc_size);
+    free(enc);
+    free(arr);
+}
+
+/* Round-trip: 6-property rule — exercises renormalization over a long
+ * sequence (mirrors test_css_ae_codec_long_rule for the opt codec).   */
+void test_css_opt_codec_long_roundtrip(void) {
+    const char* css =
+        "section { display: flex; flex-direction: column; "
+        "align-items: center; justify-content: center; "
+        "background-color: white; color: black; }";
+
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS opt long roundtrip: alloc");
+    if (!arr) return;
+    parseCSS(css, arr);
+    assert_true(arr->count > 0,              "CSS opt long roundtrip: parsed tokens > 0");
+    assert_true(arr->tokens[0].type == 0,    "CSS opt long roundtrip: type 0 rule");
+    assert_true(arr->tokens[0].data.rule.propertyCount == 6,
+                "CSS opt long roundtrip: 6 properties");
+
+    size_t enc_size = 0;
+    unsigned char* enc = css_encode_opt(arr, &enc_size);
+    assert_true(enc != NULL, "CSS opt long roundtrip: encode non-NULL");
+    assert_true(enc_size > 0, "CSS opt long roundtrip: encoded size > 0");
+    if (!enc) { free(arr); return; }
+
+    CSSTokenArray* dec = css_decode_opt(enc, enc_size);
+    assert_true(dec != NULL, "CSS opt long roundtrip: decode non-NULL");
+
+    if (dec) {
+        assert_equal_int(dec->count, arr->count,
+                         "CSS opt long roundtrip: token count");
+        assert_equal_int(dec->tokens[0].data.rule.propertyCount,
+                         arr->tokens[0].data.rule.propertyCount,
+                         "CSS opt long roundtrip: propertyCount");
+        assert_equal_int(dec->tokens[0].data.rule.selectorTokenSize,
+                         arr->tokens[0].data.rule.selectorTokenSize,
+                         "CSS opt long roundtrip: selectorTokenSize");
+        assert_equal_int(dec->tokens[0].data.rule.ruleTokenSize,
+                         arr->tokens[0].data.rule.ruleTokenSize,
+                         "CSS opt long roundtrip: ruleTokenSize");
+        assert_true(css_token_arrays_equal(arr, dec),
+                    "CSS opt long roundtrip: all tokenizables match losslessly");
+        free(dec);
+    }
+
+    printf("PASS CSS opt codec - long round-trip (%d ruleTokens, %d properties, %zu bytes encoded)\n",
+           arr->tokens[0].data.rule.ruleTokenSize,
+           arr->tokens[0].data.rule.propertyCount,
+           enc_size);
+    free(enc);
+    free(arr);
+}
+
+/* Compression ratio: opt codec vs static AE on the long stylesheet.
+ * Asserts opt is smaller than static AE and that the round-trip is lossless. */
+void test_css_opt_compression_ratio(void) {
+    const char* css =
+        "/* reset */\n"
+        "* { box-sizing: border-box; margin: 0; padding: 0; }\n"
+        "/* base */\n"
+        "body { font-family: sans-serif; font-size: 16px; line-height: 1.6; color: #333; background: white; }\n"
+        "h1 { font-size: 2rem; font-weight: bold; color: #111; margin-bottom: 16px; }\n"
+        "h2 { font-size: 1.5rem; font-weight: bold; color: #222; margin-bottom: 12px; }\n"
+        "p { margin-bottom: 16px; }\n"
+        "a { color: blue; text-decoration: underline; }\n"
+        "a:hover { color: darkblue; text-decoration: none; }\n"
+        "img { display: block; max-width: 100%; height: auto; }\n"
+        "/* layout */\n"
+        "header { display: flex; justify-content: space-between; align-items: center;"
+        " padding: 16px 24px; background: white; border-bottom: 1px solid #ddd; }\n"
+        "nav a { color: #333; text-decoration: none; font-weight: bold; }\n"
+        "main { max-width: 960px; margin: 0 auto; padding: 32px 16px; }\n"
+        "footer { background: #222; color: white; text-align: center; padding: 24px; }\n"
+        "/* hero */\n"
+        ".hero { background: #4f46e5; color: white; text-align: center; padding: 64px 24px; }\n"
+        ".hero h1 { font-size: 3rem; margin-bottom: 24px; }\n"
+        "/* card */\n"
+        ".card { background: white; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px #0001; }\n"
+        "/* button */\n"
+        "button { display: inline; padding: 10px 20px; background: blue; color: white;"
+        " border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }\n"
+        "button:hover { background: darkblue; }\n"
+        "/* responsive */\n"
+        "@media (max-width: 768px) { }\n";
+
+    size_t input_len = strlen(css);
+
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS opt ratio: alloc");
+    if (!arr) return;
+    parseCSS(css, arr);
+    assert_true(arr->count > 0, "CSS opt ratio: parsed tokens > 0");
+
+    size_t opt_size = 0;
+    unsigned char* opt_enc = css_encode_opt(arr, &opt_size);
+    assert_true(opt_enc != NULL, "CSS opt ratio: opt encode non-NULL");
+
+    size_t ae_size = 0;
+    unsigned char* ae_enc = css_encode_ae(arr, &ae_size);
+    assert_true(ae_enc != NULL, "CSS opt ratio: AE encode non-NULL");
+
+    double opt_ratio = (double)opt_size / (double)input_len * 100.0;
+    double ae_ratio  = (double)ae_size  / (double)input_len * 100.0;
+
+    printf("  Input:        %zu bytes\n", input_len);
+    printf("  Static AE:    %zu bytes (%.1f%% of input, %.1f%% reduction)\n",
+           ae_size, ae_ratio, 100.0 - ae_ratio);
+    printf("  Opt codec:    %zu bytes (%.1f%% of input, %.1f%% reduction)\n",
+           opt_size, opt_ratio, 100.0 - opt_ratio);
+
+    assert_true(opt_size < ae_size,
+                "CSS opt ratio: opt codec smaller than static AE codec");
+
+    /* Lossless round-trip verification */
+    if (opt_enc) {
+        CSSTokenArray* dec = css_decode_opt(opt_enc, opt_size);
+        assert_true(dec != NULL, "CSS opt ratio: decode non-NULL");
+        if (dec) {
+            assert_equal_int(dec->count, arr->count,
+                             "CSS opt ratio: decoded count matches");
+            assert_true(css_token_arrays_equal(arr, dec),
+                        "CSS opt ratio: round-trip is lossless");
+            free(dec);
+        }
+    }
+
+    free(opt_enc);
+    free(ae_enc);
+    free(arr);
+    printf("PASS CSS opt codec - compression ratio (%.1f%% reduction vs %.1f%% for static AE)\n",
+           100.0 - opt_ratio, 100.0 - ae_ratio);
+}
+
+/* ── zlib vs CSS opt benchmark tests ────────────────────────────────────── */
+
+static void print_css_opt_benchmark_row(size_t input_len,
+                                        size_t ae_size,
+                                        size_t opt_size,
+                                        uLongf zlib_size) {
+    printf("  Input:           %zu bytes\n", input_len);
+    printf("  CSS static AE:   %zu bytes (%.1f%% of original, %.1f%% reduction)\n",
+           ae_size,  (double)ae_size  / (double)input_len * 100.0,
+           100.0 - (double)ae_size  / (double)input_len * 100.0);
+    printf("  CSS opt encode:  %zu bytes (%.1f%% of original, %.1f%% reduction)\n",
+           opt_size, (double)opt_size / (double)input_len * 100.0,
+           100.0 - (double)opt_size / (double)input_len * 100.0);
+    printf("  zlib compress:   %lu bytes (%.1f%% of original, %.1f%% reduction)\n",
+           (unsigned long)zlib_size,
+           (double)zlib_size / (double)input_len * 100.0,
+           100.0 - (double)zlib_size / (double)input_len * 100.0);
+}
+
+/* Best case: short rule with maximum token repetition. */
+void test_zlib_compare_css_opt_best_case(void) {
+    const char* css = "body { color: red; color: red; }";
+    size_t input_len = strlen(css);
+
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS opt best: alloc");
+    if (!arr) return;
+    parseCSS(css, arr);
+
+    size_t ae_size = 0;
+    unsigned char* ae_enc = css_encode_ae(arr, &ae_size);
+    assert_true(ae_enc != NULL, "CSS opt best: AE encode non-NULL");
+
+    size_t opt_size = 0;
+    unsigned char* opt_enc = css_encode_opt(arr, &opt_size);
+    assert_true(opt_enc != NULL, "CSS opt best: opt encode non-NULL");
+    assert_true(opt_size > 0,    "CSS opt best: encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "CSS opt best: malloc zlib buffer");
+    int zr = compress(zlib_dest, &zlib_dest_len, (const Bytef*)css, (uLong)input_len);
+    assert_true(zr == Z_OK, "CSS opt best: zlib compress Z_OK");
+
+    print_css_opt_benchmark_row(input_len, ae_size, opt_size, zlib_dest_len);
+
+    /* Lossless round-trip */
+    if (opt_enc) {
+        CSSTokenArray* dec = css_decode_opt(opt_enc, opt_size);
+        assert_true(dec != NULL, "CSS opt best: decode non-NULL");
+        if (dec) {
+            assert_true(css_token_arrays_equal(arr, dec),
+                        "CSS opt best: round-trip lossless");
+            free(dec);
+        }
+    }
+
+    free(ae_enc); free(opt_enc); free(zlib_dest); free(arr);
+    printf("PASS zlib vs CSS opt compare - best case\n");
+}
+
+/* Worst case: short rule with no token repetition. */
+void test_zlib_compare_css_opt_worst_case(void) {
+    const char* css = "a:hover { font-size: 2em; }";
+    size_t input_len = strlen(css);
+
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS opt worst: alloc");
+    if (!arr) return;
+    parseCSS(css, arr);
+
+    size_t ae_size = 0;
+    unsigned char* ae_enc = css_encode_ae(arr, &ae_size);
+    assert_true(ae_enc != NULL, "CSS opt worst: AE encode non-NULL");
+
+    size_t opt_size = 0;
+    unsigned char* opt_enc = css_encode_opt(arr, &opt_size);
+    assert_true(opt_enc != NULL, "CSS opt worst: opt encode non-NULL");
+    assert_true(opt_size > 0,    "CSS opt worst: encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "CSS opt worst: malloc zlib buffer");
+    int zr = compress(zlib_dest, &zlib_dest_len, (const Bytef*)css, (uLong)input_len);
+    assert_true(zr == Z_OK, "CSS opt worst: zlib compress Z_OK");
+
+    print_css_opt_benchmark_row(input_len, ae_size, opt_size, zlib_dest_len);
+
+    /* Lossless round-trip */
+    if (opt_enc) {
+        CSSTokenArray* dec = css_decode_opt(opt_enc, opt_size);
+        assert_true(dec != NULL, "CSS opt worst: decode non-NULL");
+        if (dec) {
+            assert_true(css_token_arrays_equal(arr, dec),
+                        "CSS opt worst: round-trip lossless");
+            free(dec);
+        }
+    }
+
+    free(ae_enc); free(opt_enc); free(zlib_dest); free(arr);
+    printf("PASS zlib vs CSS opt compare - worst case\n");
+}
+
+/* Long stylesheet: main benchmark — verifies opt beats static AE and reports
+ * compression ratio toward the 70% reduction target.                         */
+void test_zlib_compare_css_opt_long_stylesheet(void) {
+    const char* css =
+        "/* reset */\n"
+        "* { box-sizing: border-box; margin: 0; padding: 0; }\n"
+        "/* base */\n"
+        "body { font-family: sans-serif; font-size: 16px; line-height: 1.6; color: #333; background: white; }\n"
+        "h1 { font-size: 2rem; font-weight: bold; color: #111; margin-bottom: 16px; }\n"
+        "h2 { font-size: 1.5rem; font-weight: bold; color: #222; margin-bottom: 12px; }\n"
+        "p { margin-bottom: 16px; }\n"
+        "a { color: blue; text-decoration: underline; }\n"
+        "a:hover { color: darkblue; text-decoration: none; }\n"
+        "img { display: block; max-width: 100%; height: auto; }\n"
+        "/* layout */\n"
+        "header { display: flex; justify-content: space-between; align-items: center;"
+        " padding: 16px 24px; background: white; border-bottom: 1px solid #ddd; }\n"
+        "nav a { color: #333; text-decoration: none; font-weight: bold; }\n"
+        "main { max-width: 960px; margin: 0 auto; padding: 32px 16px; }\n"
+        "footer { background: #222; color: white; text-align: center; padding: 24px; }\n"
+        "/* hero */\n"
+        ".hero { background: #4f46e5; color: white; text-align: center; padding: 64px 24px; }\n"
+        ".hero h1 { font-size: 3rem; margin-bottom: 24px; }\n"
+        "/* card */\n"
+        ".card { background: white; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px #0001; }\n"
+        "/* button */\n"
+        "button { display: inline; padding: 10px 20px; background: blue; color: white;"
+        " border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }\n"
+        "button:hover { background: darkblue; }\n"
+        "/* responsive */\n"
+        "@media (max-width: 768px) { }\n";
+
+    size_t input_len = strlen(css);
+
+    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    assert_true(arr != NULL, "CSS opt long: alloc");
+    if (!arr) return;
+    parseCSS(css, arr);
+    assert_true(arr->count > 0, "CSS opt long: parsed tokens > 0");
+
+    int total_tokenizables = 0;
+    for (int t = 0; t < arr->count; t++) {
+        const CSSToken* tok = &arr->tokens[t];
+        if      (tok->type == 0) total_tokenizables += tok->data.rule.ruleTokenSize;
+        else if (tok->type == 1) total_tokenizables += tok->data.atRule.atRuleTokenSize;
+        else                     total_tokenizables += tok->data.comment.commentTokenSize;
+    }
+
+    size_t ae_size = 0;
+    unsigned char* ae_enc = css_encode_ae(arr, &ae_size);
+    assert_true(ae_enc != NULL, "CSS opt long: AE encode non-NULL");
+    assert_true(ae_size > 0,    "CSS opt long: AE encoded size > 0");
+
+    size_t opt_size = 0;
+    unsigned char* opt_enc = css_encode_opt(arr, &opt_size);
+    assert_true(opt_enc != NULL, "CSS opt long: opt encode non-NULL");
+    assert_true(opt_size > 0,    "CSS opt long: opt encoded size > 0");
+
+    uLongf zlib_dest_len = compressBound((uLong)input_len);
+    unsigned char* zlib_dest = (unsigned char*)malloc((size_t)zlib_dest_len);
+    assert_true(zlib_dest != NULL, "CSS opt long: malloc zlib buffer");
+    int zr = compress(zlib_dest, &zlib_dest_len, (const Bytef*)css, (uLong)input_len);
+    assert_true(zr == Z_OK, "CSS opt long: zlib compress Z_OK");
+
+    printf("  CSS tokens:      %d rules/at-rules/comments, %d total CSSTokenizables\n",
+           arr->count, total_tokenizables);
+    print_css_opt_benchmark_row(input_len, ae_size, opt_size, zlib_dest_len);
+
+    /* Opt codec must outperform static AE */
+    assert_true(opt_size < ae_size,
+                "CSS opt long: opt codec smaller than static AE");
+
+    /* Lossless round-trip at this scale */
+    if (opt_enc) {
+        CSSTokenArray* dec = css_decode_opt(opt_enc, opt_size);
+        assert_true(dec != NULL, "CSS opt long: decode non-NULL");
+        if (dec) {
+            assert_equal_int(dec->count, arr->count,
+                             "CSS opt long: decoded count matches");
+            assert_true(css_token_arrays_equal(arr, dec),
+                        "CSS opt long: round-trip is lossless");
+            free(dec);
+        }
+    }
+
+    free(ae_enc); free(opt_enc); free(zlib_dest); free(arr);
+    printf("PASS zlib vs CSS opt compare - long stylesheet\n");
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * NL-EN optimised codec tests (Steps 1-4)
  * ══════════════════════════════════════════════════════════════════════════ */

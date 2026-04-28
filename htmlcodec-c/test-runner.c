@@ -116,6 +116,16 @@ int main(void) {
     test_nl_en_opt_codec_long_roundtrip();
     test_nl_en_opt_compression_ratio();
 
+    printf("\n--- CSS OPTIMISED CODEC TESTS (Steps 1-3) ---\n");
+    test_css_opt_codec_roundtrip();
+    test_css_opt_codec_long_roundtrip();
+    test_css_opt_compression_ratio();
+
+    printf("\n--- ZLIB VS CSS OPT BENCHMARK TESTS ---\n");
+    test_zlib_compare_css_opt_best_case();
+    test_zlib_compare_css_opt_worst_case();
+    test_zlib_compare_css_opt_long_stylesheet();
+
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
 
