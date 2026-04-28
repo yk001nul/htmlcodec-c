@@ -145,4 +145,12 @@ void test_zlib_compare_css_ae_best_case();
 void test_zlib_compare_css_ae_worst_case();
 void test_zlib_compare_css_ae_long_stylesheet();
 
+// NL-EN optimised codec tests (Steps 1-4)
+void test_nl_en_opt_tokenizer_word_match();
+void test_nl_en_opt_tokenizer_longest_match();
+void test_nl_en_opt_codec_roundtrip();
+void test_nl_en_opt_codec_casestyle();
+void test_nl_en_opt_codec_long_roundtrip();
+void test_nl_en_opt_compression_ratio();
+
 #endif // TOKENIZER_TEST_H

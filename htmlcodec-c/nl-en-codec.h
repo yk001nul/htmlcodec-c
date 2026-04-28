@@ -77,4 +77,58 @@ unsigned char* nl_en_encode_ae(const NLTokenArray* arr, size_t count, size_t* ou
  */
 NLTokenArray* nl_en_decode_ae(const unsigned char* buffer, size_t bufferSize);
 
+/* ── Optimised codec (Steps 1-4) ─────────────────────────────────────────── */
+
+/**
+ * Encodes an NLTokenArray using four stacked optimisations over nl_en_encode_ae:
+ *
+ *   Step 1 – Adaptive AE (no static frequency table):
+ *     An online count table (Laplace-initialised to 1) replaces the fixed
+ *     per-symbol frequency stored in the header.  The header carries only the
+ *     token-identity vocab (no counts), shrinking header cost from ~20 bits/sym
+ *     to 11 bits/sym (pattern) or 8 bits/sym (ASCII).
+ *
+ *   Step 2 – Decoupled caseStyle:
+ *     Token identity is (isPattern, flag) only; caseStyle is stripped before AE
+ *     coding and appended as a packed 2-bit-per-pattern-token side-channel after
+ *     the AE stream.  This consolidates variants ("ing"/"Ing"/"ING") into one
+ *     AE symbol, improving probability estimates.
+ *
+ *   Step 3 – Word-level dictionary:
+ *     Tokens produced by tokenizeEnglishOpt() may carry flags in
+ *     [NL_EN_PATTERN_COUNT, NL_EN_OPT_PATTERN_COUNT) referencing the 232-entry
+ *     word dictionary.  The extended flag is stored as 10 bits in the vocab
+ *     header and as one AE symbol, replacing 2-4 syllable tokens per word.
+ *
+ *   Step 4 – Order-1 context model:
+ *     The AE probability is conditioned on the previous token's symbol index.
+ *     A 2-D adaptive count table count[ctx][sym] (ctx ∈ [0,unique], sym ∈ vocab)
+ *     is maintained online; ctx=unique is the start-of-sequence sentinel.
+ *     Both encoder and decoder update the table identically after each token.
+ *
+ * Bit stream layout:
+ *   13 bits : token count
+ *   10 bits : unique vocab size U
+ *   Per unique token (isPattern=true) : 1 + 10 (flag) = 11 bits
+ *   Per unique token (isPattern=false): 1 + 7  (flag-32) = 8 bits
+ *   Variable : renormalised order-1 adaptive AE bitstream
+ *   2 bits × (number of pattern tokens in sequence) : caseStyle side-channel
+ *
+ * @param arr     NLTokenArray to encode (preferably from tokenizeEnglishOpt)
+ * @param count   Number of tokens to encode (must be <= arr->count)
+ * @param outSize Output: size of returned buffer in bytes
+ * @return Dynamically allocated byte buffer; caller must free it
+ */
+unsigned char* nl_en_encode_opt(const NLTokenArray* arr, size_t count,
+                                size_t* outSize);
+
+/**
+ * Decodes a byte buffer produced by nl_en_encode_opt back into an NLTokenArray.
+ *
+ * @param buffer     The byte buffer to decode
+ * @param bufferSize Size of the buffer in bytes
+ * @return Dynamically allocated NLTokenArray; caller must free with freeNLTokenArray
+ */
+NLTokenArray* nl_en_decode_opt(const unsigned char* buffer, size_t bufferSize);
+
 #endif // NL_EN_CODEC_H

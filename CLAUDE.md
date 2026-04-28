@@ -28,7 +28,7 @@ This is a C17 compression library that tokenizes HTML, CSS, English/Dutch text, 
 
 ### CMake Targets
 
-- **`htmlcodec-c-lib`** — static library containing all tokenizers and codecs
+- **`htmlcodec-c-lib`** — static library: `html-tokenizer.c`, `css-tokenizer.c`, `css-codec.c`, `nl-en-tokenizer.c`, `nl-en-opt.c`, `nl-en-codec.c`, `cl-javascript-en-tokenizer.c`, `nl-en-us-hyphenator.c`
 - **`htmlcodec-c`** — main executable stub (currently a no-op)
 - **`htmlcodec-c-test`** — test runner (`test-runner.c` + `tokenizer-test.c`)
 
@@ -42,7 +42,8 @@ Each module is a self-contained `.h`/`.c` pair:
 | `css-tokenizer` | CSS parser for selectors, properties, at-rules, and comments. Contains a 1208-entry pattern codebook (`CSS_PATTERNS[]`) across 11 segments: HTML type selectors (0–137), HTML attribute names (138–264), pseudo-classes (265–324), pseudo-elements (325–346), CSS properties (347–678), at-rules (679–697), combinators/symbols (698–707), reserved keyword values (708–923), value functions (924–1029), named colors (1030–1177), named at-rule blocks (1178–1207). `CSSTokenizable` (`isPattern` bool + `unsigned short flag`) represents one matched codebook entry or one raw ASCII character. `CSSProperty` carries `nameTokens[1024]`/`valueTokens[1024]` + sizes for whole-string tokenization of each property name and value. Both the `rule` union member (`selectorTokens[1024]`/`selectorTokenSize`) and the `atRule` union member (`atRuleTokens[1024]`/`atRuleTokenSize`) are populated by the same greedy longest-match left-to-right scan. The `comment` union member carries `commentTokens[1024]`/`commentTokenSize` where each character of the comment text is stored as a raw-ASCII `CSSTokenizable`. The `rule` union member also carries `ruleTokens[1024]`/`ruleTokenSize` — a flat concatenation produced by `css_flatten_rule_tokens()`: selectorTokens + `{` + (for each property: nameTokens + `:` + valueTokens + `;`) + `}`, using ASCII `CSSTokenizable` sentinels at each syntactic boundary. `collectCSSFrequencies()` takes a completed `CSSTokenArray` and returns a heap-allocated `CSSFreqMap` (up to `CSS_MAX_UNIQUE_TOKENIZABLE`=1464 entries) containing one `CSSFreqEntry` per unique `CSSTokenizable`, sorted descending by frequency. `CSS_MAX_TOKENIZABLE`=1024, `CSS_MAX_PROPERTIES`=16, `CSS_MAX_TOKENS`=256, `CSS_MAX_UNIQUE_TOKENIZABLE`=1464. |
 | `css-codec` | Arithmetic-encoding codec for `CSSTokenArray`. `css_encode_ae()` builds a frequency map via `collectCSSFrequencies()`, constructs a fixed-point cumulative probability table (`CSSAESymbol`, scaled to `CSS_AE_SCALE`=65536), then encodes the flat `CSSTokenizable` sequence using renormalized arithmetic coding with E1/E2/E3 bit-emission (WNC-style). Output format: 10-bit total-tokenizable count + 11-bit unique count + per-symbol (22 bits if isPattern, 18 bits if ASCII) + 9-bit CSSToken count + per-token (2-bit type + 10-bit tokenizable size) + variable-length AE bitstream. `css_decode_ae()` reconstructs the frequency table, performs renormalized arithmetic decoding to recover the flat `CSSTokenizable` sequence, then partitions it back into `CSSToken` structs using the per-token sizes and the `{`/`:`/`;`/`}` ASCII sentinels embedded by the flattening step. Lossless for arbitrary-length sequences (no fixed precision limit). |
 | `nl-en-tokenizer` | English/Dutch text tokenizer using a 512-entry pattern dictionary structured as: CV×48, CVC×48, CCV×48, CVCC×48, VC×48, VCC×48, CCC×16, prefixes×48, suffixes×128 (48 base + 80 fill), non-syllable trigraphs×16, digraphs×16. `NLToken.flag` is `unsigned short` (holds indices 0–511). Tokenizes right-to-left (suffix-first) then reverses the token list. `initialize_patterns()` builds `NL_EN_PATTERNS` using a round-robin merge across the 12 sections: each round picks one element per section (by rank within section), sorts the batch by ascending character length, then appends — placing the most-frequent patterns at lower indices for better variable-width compression. `collectNLFrequencies()` takes a completed `NLTokenArray` and returns a heap-allocated `NLFreqMap` containing one `NLFreqEntry` (NLToken copy + frequency count) per unique token (identified by isPattern+flag), sorted descending by frequency; `uniqueCount` ≤ `totalTokens` ≤ `NL_EN_MAX_TOKENS`. |
-| `nl-en-codec` | Bit-level encoder/decoder for `NLTokenArray`; pattern tokens use variable width 8–16 bits (1 isPattern + 4 bitLength + N index bits + 2 caseStyle), ASCII tokens use 9 bits (1+8). `outSize` reflects actual bits written (rounded up to bytes), not worst-case allocation. Also provides arithmetic-encoding codec (`nl_en_encode_ae` / `nl_en_decode_ae`): builds a fixed-point probability table (`AESymbol`, cum bounds scaled to `NL_AE_SCALE`=65536) from the token frequency map, then encodes the sequence using renormalized arithmetic coding with E1/E2/E3 bit-emission (WNC-style). Serialised as: 13-bit count + 10-bit unique count + 22/18 bits per unique token + variable-length AE bitstream. Decoder rebuilds the probability table from the stored data, initialises the code register from the first 32 bits of the AE stream (MSB-first), then performs renormalized arithmetic decoding. Lossless for arbitrary-length sequences (no fixed precision limit). |
+| `nl-en-opt` | Extended word-level dictionary and optimised tokenizer, compiled as a separate translation unit (`nl-en-opt.c`). Contains `NL_EN_WORD_PATTERNS[232]` — 232 common English words (4–8 chars) ranked by expected frequency. Word tokens carry flags in `[NL_EN_PATTERN_COUNT, NL_EN_OPT_PATTERN_COUNT)` = `[512, 744)`. `tokenizeEnglishOpt()` performs true longest-match right-to-left over both the 512-entry syllable dictionary and the 232-entry word dictionary; a longer match always beats a shorter one at the same position. Calls `tokenizeEnglish("")` internally on first use to trigger `initialize_patterns()` and populate `NL_EN_PATTERNS`. `NL_EN_WORD_COUNT`=232, `NL_EN_OPT_PATTERN_COUNT`=744. |
+| `nl-en-codec` | Bit-level encoder/decoder for `NLTokenArray`; pattern tokens use variable width 8–16 bits (1 isPattern + 4 bitLength + N index bits + 2 caseStyle), ASCII tokens use 9 bits (1+8). `outSize` reflects actual bits written (rounded up to bytes), not worst-case allocation. Also provides: (a) static-frequency AE codec (`nl_en_encode_ae` / `nl_en_decode_ae`): builds a fixed-point probability table (`AESymbol`, cum bounds scaled to `NL_AE_SCALE`=65536) from the token frequency map, serialised as 13-bit count + 10-bit unique count + 22/18 bits per unique token + variable-length AE bitstream; (b) optimised adaptive AE codec (`nl_en_encode_opt` / `nl_en_decode_opt`): see Encoding Format section below. All codecs are lossless for arbitrary-length sequences (no fixed precision limit). |
 | `cl-javascript-en-tokenizer` | JavaScript tokenizer using 256-entry pattern dictionary (ES2025 keywords, API tokens, operators, digraphs) |
 | `nl-en-us-hyphenator` | Knuth-Liang syllable extractor for US English. Reads `ushyphmax.tex` (4938 patterns) at first call to build a trie; falls back to the embedded `KL_US_HYPHEN_PATTERNS` array if the file is not found. `tokenizeKnuthLiang()` splits input on non-alphanumeric boundaries (using `KL_ASCII_PATTERNS[96]`), lowercases each word, then applies affix stripping before KL hyphenation: `kl_strip_affixes()` attempts to find the longest matching suffix (min length 3, from `KL_EN_SUFFIXES[128]`) that leaves a stem ≥ 3 chars; if found, the longest matching prefix (from `KL_EN_PREFIXES[128]`) is stripped from the stem if at least 3 chars remain. The prefix token (if any), KL-hyphenated stem syllables, and suffix token are emitted in order, all with `isHyphenated=true` and affixes always with `caseStyle=0`. If no suffix matches, normal KL hyphenation runs. Stem syllable case style is derived from the original-cased text. Both `KLTokenArray` (max `KL_MAX_TOKENS`=4096 tokens) and `KLToken` (inline `text[KL_MAX_TOKEN_TEXT=64]`) use fixed-size arrays with no per-token heap allocation. The trie is cached as a module-level static after the first call. `collectKLFrequencies()` takes a completed `KLTokenArray` and returns a heap-allocated `KLFreqMap` containing one `KLStringFreq` entry per unique string (text + frequency count), sorted descending by frequency; `uniqueCount` ≤ `totalTokens` ≤ `KL_MAX_TOKENS`. |
 
@@ -86,6 +87,38 @@ Bit stream structure produced by `css_encode_ae`:
 - Variable: renormalized AE bitstream (E1/E2/E3 bit-emission, WNC-style)
 
 The flat `CSSTokenizable` sequence encodes all tokens concatenated in order. Decoding partitions the recovered sequence back into `CSSToken` structs using the per-token sizes and the embedded ASCII sentinels (`{`, `:`, `;`, `}`). Lossless for arbitrary-length sequences.
+
+### Encoding Format (NL-EN Optimised Codec — Steps 1–4)
+
+Bit stream structure produced by `nl_en_encode_opt` / decoded by `nl_en_decode_opt`:
+
+- 13 bits: token count
+- 10 bits: vocab size (number of distinct token identities, first-appearance order)
+- Per vocab entry (isPattern=true): 1 (isPattern flag) + 10 (flag, covers 0–743) = 11 bits
+- Per vocab entry (isPattern=false): 1 (isPattern flag) + 7 (flag−32, printable ASCII offset) = 8 bits
+- 13 bits: sc\_count (number of pattern tokens in the sequence = number of caseStyle values)
+- sc\_count × 2 bits: caseStyle side-channel, one 2-bit value per pattern token in sequence order
+- Variable: renormalized AE bitstream (E1/E2/E3 bit-emission, WNC-style)
+
+The caseStyle side-channel is placed **before** the AE bitstream so the decoder reads it from a deterministic bit position; placing it after the AE stream is unreliable because the renormalized AE decoder primes a 32-bit code register that may over-read into that region.
+
+**Four optimisation steps applied:**
+
+- **Step 1 — Adaptive AE (no static frequency table):** The vocab header records only token identities (no per-symbol frequency). Probabilities are maintained as a `count[ctx][sym]` table initialised with Laplace counts (all 1) and updated online after each decoded symbol.
+- **Step 2 — Decoupled caseStyle:** caseStyle is encoded in a 2-bit side-channel in the header rather than as part of the AE alphabet, reducing the alphabet size and eliminating case-induced probability fragmentation.
+- **Step 3 — Extended word dictionary:** The 232-entry word dictionary (`nl-en-opt.c`) extends the symbol space to flags 0–743. Word tokens (flags 512–743) are produced by `tokenizeEnglishOpt()`, which prefers word-level matches over syllable matches when both cover the same span.
+- **Step 4 — Order-1 context model:** The count table has `(vocab_size + 1)` rows × `vocab_size` columns. Row `vocab_size` is the start-of-sequence sentinel. After decoding each symbol, the context advances to that symbol's row, so each symbol is coded under the distribution of its immediate predecessor.
+
+**Benchmark (1091-byte English prose passage, 552 tokens):**
+
+| Codec | Output | Ratio |
+|-------|--------|-------|
+| NL-EN variable-width | ~965 B | ~88% of input |
+| NL-EN static AE | ~936 B | ~86% of input |
+| NL-EN optimised AE (Steps 1–4) | ~826 B | ~76% of input |
+| zlib | ~658 B | ~60% of input |
+
+The optimised codec closes roughly half the gap between static AE and zlib on typical English prose. The remaining gap to zlib is due to per-character syllable/word boundary overhead; further gains would require whole-word tokenisation at a higher vocabulary granularity.
 
 ### zlib vs CSS AE Benchmark
 

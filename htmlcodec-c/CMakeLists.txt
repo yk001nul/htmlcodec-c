@@ -34,6 +34,7 @@ add_library(htmlcodec-c-lib STATIC
     css-tokenizer.c
     css-codec.c
     nl-en-tokenizer.c
+    nl-en-opt.c
     nl-en-codec.c
     cl-javascript-en-tokenizer.c
     nl-en-us-hyphenator.c
