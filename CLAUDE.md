@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Test Commands
 
-All source files are under `htmlcodec-c/`. Build using CMake presets (MSVC/Ninja on Windows):
+All source files are under `htmlcodec-c/`. Requires CMake ≥ 3.21 and Ninja. Build using CMake presets:
+
+### Windows (MSVC, requires Visual Studio 2022 Developer environment)
 
 ```bash
 # Configure
@@ -20,7 +22,68 @@ ctest -C Debug --test-dir htmlcodec-c/out/build/x64-debug
 ./htmlcodec-c/out/build/x64-debug/htmlcodec-c-test.exe
 ```
 
-Available presets: `x64-debug`, `x64-release`, `x86-debug`, `x86-release`.
+Available Windows presets: `x64-debug`, `x64-release`, `x86-debug`, `x86-release`.
+
+zlib is fetched automatically via CMake FetchContent on Windows (no system zlib assumed).
+
+### macOS (Darwin, requires Xcode Command Line Tools)
+
+```bash
+# Intel Mac
+cmake --preset darwin-x64-debug -S htmlcodec-c -B htmlcodec-c/out/build/darwin-x64-debug
+cmake --build htmlcodec-c/out/build/darwin-x64-debug
+ctest --test-dir htmlcodec-c/out/build/darwin-x64-debug
+
+# Apple Silicon
+cmake --preset darwin-arm64-debug -S htmlcodec-c -B htmlcodec-c/out/build/darwin-arm64-debug
+cmake --build htmlcodec-c/out/build/darwin-arm64-debug
+ctest --test-dir htmlcodec-c/out/build/darwin-arm64-debug
+```
+
+Available macOS presets: `darwin-x64-debug`, `darwin-x64-release`, `darwin-arm64-debug`, `darwin-arm64-release`.
+
+macOS ships zlib in its SDK; no extra install required.
+
+### Linux (GCC or Clang, requires `libz-dev`)
+
+```bash
+# Native x64 (install zlib dev headers first: apt install zlib1g-dev)
+cmake --preset linux-x64-debug -S htmlcodec-c -B htmlcodec-c/out/build/linux-x64-debug
+cmake --build htmlcodec-c/out/build/linux-x64-debug
+ctest --test-dir htmlcodec-c/out/build/linux-x64-debug
+
+# Cross-compile arm64 (requires aarch64-linux-gnu-gcc and libz-dev:arm64)
+cmake --preset linux-arm64-debug -S htmlcodec-c -B htmlcodec-c/out/build/linux-arm64-debug
+cmake --build htmlcodec-c/out/build/linux-arm64-debug
+```
+
+Available Linux presets: `linux-x64-debug`, `linux-x64-release`, `linux-arm64-debug`, `linux-arm64-release`.
+
+The arm64 presets require the `aarch64-linux-gnu-gcc` cross-compiler; install via `apt install gcc-aarch64-linux-gnu`.
+
+### Android (NDK r25+, requires `ANDROID_NDK_HOME` env var or `-DCMAKE_ANDROID_NDK=<path>`)
+
+```bash
+# arm64-v8a debug (set ANDROID_NDK_HOME first, or pass -DCMAKE_ANDROID_NDK=<path>)
+cmake --preset android-arm64-debug \
+      -S htmlcodec-c \
+      -B htmlcodec-c/out/build/android-arm64-debug \
+      -DCMAKE_ANDROID_NDK=$ANDROID_NDK_HOME
+cmake --build htmlcodec-c/out/build/android-arm64-debug
+
+# x86_64 debug (useful for emulator testing)
+cmake --preset android-x86_64-debug \
+      -S htmlcodec-c \
+      -B htmlcodec-c/out/build/android-x86_64-debug \
+      -DCMAKE_ANDROID_NDK=$ANDROID_NDK_HOME
+cmake --build htmlcodec-c/out/build/android-x86_64-debug
+```
+
+Available Android presets: `android-arm64-debug`, `android-arm64-release`, `android-x86_64-debug`, `android-x86_64-release`.
+
+Android targets min API 21 (Android 5.0+) and use no C++ STL (pure C library). The test binary must be pushed to a device or emulator (`adb push`) and run there; ctest is not run locally for Android targets.
+
+On Android NDK 21+, zlib is available as a built-in system library and is found automatically via `find_package(ZLIB)` — no FetchContent fetch is performed.
 
 ## Architecture
 
