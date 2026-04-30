@@ -29,10 +29,11 @@ typedef struct {
  *   Variable : renormalized AE bitstream (E1/E2/E3 bit-emission)
  *
  * @param arr     CSSTokenArray to encode
+ * @param count   Number of CSSTokens to encode (must be <= arr->count)
  * @param outSize Output: size of returned buffer in bytes
  * @return Heap-allocated byte buffer; caller must free it
  */
-unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t* outSize);
+unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t count, size_t* outSize);
 
 /**
  * Decodes a byte buffer produced by css_encode_ae back into a CSSTokenArray.
@@ -70,10 +71,11 @@ typedef struct {
  *   Variable : adaptive order-1 AE bitstream (E1/E2/E3 renormalization)
  *
  * @param arr     CSSTokenArray to encode
+ * @param count   Number of CSSTokens to encode (must be <= arr->count)
  * @param outSize Output: size of returned buffer in bytes
  * @return Heap-allocated byte buffer; caller must free it
  */
-unsigned char* css_encode_opt(const CSSTokenArray* arr, size_t* outSize);
+unsigned char* css_encode_opt(const CSSTokenArray* arr, size_t count, size_t* outSize);
 
 /**
  * Decodes a byte buffer produced by css_encode_opt back into a CSSTokenArray.

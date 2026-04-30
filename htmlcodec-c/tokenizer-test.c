@@ -288,9 +288,8 @@ void test_cl_js_tokenizer_worst_case() {
 
 // CSS Tokenizer Tests - Best case scenarios
 void test_css_simple_rule() {
-    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
     const char* css = "body { color: red; }";
-    parseCSS(css, result);
+    CSSTokenArray* result = parseCSS(css);
     assert_equal_int(result->count, 1, "CSS simple: should have 1 token");
     assert_equal_int(result->tokens[0].type, 0, "CSS simple: should be selector rule");
     assert_equal_str(result->tokens[0].data.rule.selector, "body", "CSS simple: selector mismatch");
@@ -302,9 +301,8 @@ void test_css_simple_rule() {
 }
 
 void test_css_multiple_selectors() {
-    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
     const char* css = "h1, h2 { margin: 0; }";
-    parseCSS(css, result);
+    CSSTokenArray* result = parseCSS(css);
     assert_equal_int(result->count, 1, "CSS multi-sel: should have 1 token");
     assert_true(strchr(result->tokens[0].data.rule.selector, ',') != NULL, "CSS multi-sel: should contain comma");
     freeCSS(result);
@@ -312,9 +310,8 @@ void test_css_multiple_selectors() {
 }
 
 void test_css_multiple_properties() {
-    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
     const char* css = ".container { width: 100%; height: 50px; padding: 10px; }";
-    parseCSS(css, result);
+    CSSTokenArray* result = parseCSS(css);
     assert_equal_int(result->count, 1, "CSS multi-prop: should have 1 token");
     assert_equal_int(result->tokens[0].data.rule.propertyCount, 3, "CSS multi-prop: should have 3 properties");
     freeCSS(result);
@@ -323,9 +320,8 @@ void test_css_multiple_properties() {
 
 // CSS Tokenizer Tests - Worse case scenarios
 void test_css_comment_handling() {
-    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
     const char* css = "/* This is a comment */ body { color: blue; }\n";
-    parseCSS(css, result);
+    CSSTokenArray* result = parseCSS(css);
     assert_equal_int(result->count, 2, "CSS comment: should have comment + rule");
     assert_equal_int(result->tokens[0].type, 2, "CSS comment: first should be comment");
     assert_equal_int(result->tokens[1].type, 0, "CSS comment: second should be rule");
@@ -334,9 +330,8 @@ void test_css_comment_handling() {
 }
 
 void test_css_at_rules() {
-    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
     const char* css = "@media (max-width: 600px) { body { font-size: 14px; } }";
-    parseCSS(css, result);
+    CSSTokenArray* result = parseCSS(css);
     assert_equal_int(result->count, 1, "CSS at-rule: should have 1 at-rule token");
     assert_equal_int(result->tokens[0].type, 1, "CSS at-rule: should be at-rule type");
     freeCSS(result);
@@ -344,9 +339,8 @@ void test_css_at_rules() {
 }
 
 void test_css_complex_selectors() {
-    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
     const char* css = "div > p.active:hover { color: green; }";
-    parseCSS(css, result);
+    CSSTokenArray* result = parseCSS(css);
     assert_equal_int(result->count, 1, "CSS complex: should have 1 token");
     assert_equal_int(result->tokens[0].type, 0, "CSS complex: should be selector rule");
     assert_true(strlen(result->tokens[0].data.rule.selector) > 0, "CSS complex: selector should not be empty");
@@ -355,9 +349,8 @@ void test_css_complex_selectors() {
 }
 
 void test_css_empty_rules() {
-    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
     const char* css = "div { }";
-    parseCSS(css, result);
+    CSSTokenArray* result = parseCSS(css);
     assert_equal_int(result->count, 1, "CSS empty: should have 1 token");
     assert_equal_int(result->tokens[0].data.rule.propertyCount, 0, "CSS empty: should have 0 properties");
     freeCSS(result);
@@ -365,9 +358,8 @@ void test_css_empty_rules() {
 }
 
 void test_css_malformed_input() {
-    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
     const char* css = "broken { color: red";
-    parseCSS(css, result);
+    CSSTokenArray* result = parseCSS(css);
     assert_true(result->count >= 0, "CSS malformed: should handle gracefully");
     freeCSS(result);
     printf("? CSS - malformed input (worst case)\n");
@@ -1429,12 +1421,10 @@ void test_nl_en_ae_codec_worst_case(void) {
 /* Best case: selector and property name/value each match a known pattern,
    so each produces exactly 1 CSSTokenizable with isPattern=true.          */
 void test_css_tokenizable_pattern_match(void) {
-    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
-    if (!result) { printf("SKIP CSS tokenizable: malloc failed\n"); return; }
-
     /* "div { color: red; }" — "div", "color", and "red" are all in the
        pattern codebook (segments 1, 5, and 10 respectively).              */
-    parseCSS("div { color: red; }", result);
+    CSSTokenArray* result = parseCSS("div { color: red; }");
+    if (!result) { printf("SKIP CSS tokenizable: parseCSS failed\n"); return; }
     assert_equal_int(result->count, 1, "CSS tok pattern: 1 token");
 
     CSSToken* tok = &result->tokens[0];
@@ -1470,11 +1460,9 @@ void test_css_tokenizable_pattern_match(void) {
 /* Worst case: selector and property are not in the codebook, so every
    character becomes its own CSSTokenizable with isPattern=false.          */
 void test_css_tokenizable_ascii_fallback(void) {
-    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
-    if (!result) { printf("SKIP CSS tokenizable: malloc failed\n"); return; }
-
     /* "zz { qqq: zzz; }" — none of these strings are CSS patterns */
-    parseCSS("zz { qqq: zzz; }", result);
+    CSSTokenArray* result = parseCSS("zz { qqq: zzz; }");
+    if (!result) { printf("SKIP CSS tokenizable: parseCSS failed\n"); return; }
     assert_equal_int(result->count, 1, "CSS tok ascii: 1 token");
 
     CSSToken* tok = &result->tokens[0];
@@ -1508,12 +1496,10 @@ void test_css_tokenizable_ascii_fallback(void) {
    "@media" is in the codebook; the remainder " screen" should be partly
    tokenized as ASCII (' ') and the word "screen" which IS in the codebook.*/
 void test_css_tokenizable_atrule(void) {
-    CSSTokenArray* result = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
-    if (!result) { printf("SKIP CSS tokenizable: malloc failed\n"); return; }
-
     /* Use a simple at-rule whose identifier and named block are both in
        the codebook so we can count precisely.                              */
-    parseCSS("@media screen { }", result);
+    CSSTokenArray* result = parseCSS("@media screen { }");
+    if (!result) { printf("SKIP CSS tokenizable: parseCSS failed\n"); return; }
     assert_equal_int(result->count, 1, "CSS tok atrule: 1 token");
 
     CSSToken* tok = &result->tokens[0];
@@ -1623,13 +1609,12 @@ void test_css_tokenizable_comprehensive(void) {
         "nav > ul { list-style: none; display: flex; margin: 0; padding: 0; }\n"
         "nav > ul > li:first-child a:hover { color: royalblue; text-decoration: underline; }\n";
 
-    CSSTokenArray* arr = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
+    CSSTokenArray* arr = parseCSS(css);
     if (!arr) {
-        printf("? FAIL: CSS comprehensive - malloc failed\n");
+        printf("? FAIL: CSS comprehensive - parseCSS failed\n");
         testsFailed++;
         return;
     }
-    parseCSS(css, arr);
 
     /* ---- Overall token count ---- */
     /* 4 comments + 4 at-rules + 17 selector rules = 25 */
@@ -2001,10 +1986,8 @@ void test_zlib_compare_vw_long_text(void) {
 
 /* Req 1 (csscodec): comment tokens are raw ASCII characters */
 void test_css_comment_tokenization(void) {
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS comment tok: alloc");
-
-    parseCSS("/* hi */", arr);
+    CSSTokenArray* arr = parseCSS("/* hi */");
+    assert_true(arr != NULL, "CSS comment tok: parseCSS");
     assert_equal_int(arr->count, 1, "CSS comment tok: 1 token");
     assert_equal_int(arr->tokens[0].type, 2, "CSS comment tok: type=2");
 
@@ -2020,11 +2003,9 @@ void test_css_comment_tokenization(void) {
 
 /* Req 2 (csscodec): flatten produces correct sentinel boundaries */
 void test_css_flatten_rule_tokens(void) {
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS flatten: alloc");
-
     /* "body { color: red; }" - body=SEG1 pattern, color=SEG5 pattern, red=color pattern */
-    parseCSS("body { color: red; }", arr);
+    CSSTokenArray* arr = parseCSS("body { color: red; }");
+    assert_true(arr != NULL, "CSS flatten: parseCSS");
     assert_equal_int(arr->count, 1, "CSS flatten: 1 token");
     assert_equal_int(arr->tokens[0].type, 0, "CSS flatten: type=0");
 
@@ -2054,11 +2035,9 @@ void test_css_flatten_rule_tokens(void) {
 
 /* Req 3 (csscodec): frequency map best case — repeated tokens */
 void test_css_freqmap_best_case(void) {
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS freqmap best: alloc");
-
     /* Two identical selector rules => same tokens appear twice */
-    parseCSS("body { color: red; } body { color: red; }", arr);
+    CSSTokenArray* arr = parseCSS("body { color: red; } body { color: red; }");
+    assert_true(arr != NULL, "CSS freqmap best: parseCSS");
     assert_equal_int(arr->count, 2, "CSS freqmap best: 2 tokens");
 
     CSSFreqMap* fmap = collectCSSFrequencies(arr);
@@ -2084,11 +2063,9 @@ void test_css_freqmap_best_case(void) {
 
 /* Req 3 (csscodec): frequency map worst case — all unique tokens */
 void test_css_freqmap_worst_case(void) {
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS freqmap worst: alloc");
-
     /* @media at-rule: uses uncommon tokens so frequency is 1 each */
-    parseCSS("@media print { }", arr);
+    CSSTokenArray* arr = parseCSS("@media print { }");
+    assert_true(arr != NULL, "CSS freqmap worst: parseCSS");
     assert_true(arr->count >= 1, "CSS freqmap worst: >=1 token");
 
     CSSFreqMap* fmap = collectCSSFrequencies(arr);
@@ -2104,15 +2081,13 @@ void test_css_freqmap_worst_case(void) {
 
 /* Req 5+6 (csscodec): encode -> decode round-trip, best case */
 void test_css_ae_codec_best_case(void) {
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS AE best: alloc");
-
     /* Simple rule: body { color: red; } */
-    parseCSS("body { color: red; }", arr);
+    CSSTokenArray* arr = parseCSS("body { color: red; }");
+    assert_true(arr != NULL, "CSS AE best: parseCSS");
     assert_equal_int(arr->count, 1, "CSS AE best: 1 rule");
 
     size_t outSize = 0;
-    unsigned char* buf = css_encode_ae(arr, &outSize);
+    unsigned char* buf = css_encode_ae(arr, (size_t)arr->count, &outSize);
     assert_true(buf != NULL,  "CSS AE best: encode non-NULL");
     assert_true(outSize > 0,  "CSS AE best: encoded size > 0");
 
@@ -2167,16 +2142,14 @@ void test_css_ae_codec_best_case(void) {
    ruleToken count (11) and property parse (2 properties) are harder
    than the best-case (7 tokens, 1 property).                        */
 void test_css_ae_codec_worst_case(void) {
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS AE worst: alloc");
-
-    parseCSS("body { color: red; color: red; }", arr);
+    CSSTokenArray* arr = parseCSS("body { color: red; color: red; }");
+    assert_true(arr != NULL, "CSS AE worst: parseCSS");
     assert_equal_int(arr->count, 1, "CSS AE worst: 1 token");
     assert_equal_int(arr->tokens[0].data.rule.propertyCount, 2,
                      "CSS AE worst: 2 properties before encode");
 
     size_t outSize = 0;
-    unsigned char* buf = css_encode_ae(arr, &outSize);
+    unsigned char* buf = css_encode_ae(arr, (size_t)arr->count, &outSize);
     assert_true(buf != NULL, "CSS AE worst: encode non-NULL");
     assert_true(outSize > 0, "CSS AE worst: encoded size > 0");
 
@@ -2216,13 +2189,12 @@ void test_zlib_compare_css_ae_best_case(void) {
     const char* css = "body { color: red; color: red; }";
     size_t input_len = strlen(css);
 
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS AE bench best: alloc");
-    parseCSS(css, arr);
+    CSSTokenArray* arr = parseCSS(css);
+    assert_true(arr != NULL, "CSS AE bench best: parseCSS");
     assert_true(arr->count > 0, "CSS AE bench best: parsed token count > 0");
 
     size_t ae_size = 0;
-    unsigned char* ae_encoded = css_encode_ae(arr, &ae_size);
+    unsigned char* ae_encoded = css_encode_ae(arr, (size_t)arr->count, &ae_size);
     assert_true(ae_encoded != NULL, "CSS AE bench best: encode non-NULL");
     assert_true(ae_size > 0,        "CSS AE bench best: encoded size > 0");
 
@@ -2251,13 +2223,12 @@ void test_zlib_compare_css_ae_worst_case(void) {
     const char* css = "a:hover { font-size: 2em; }";
     size_t input_len = strlen(css);
 
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS AE bench worst: alloc");
-    parseCSS(css, arr);
+    CSSTokenArray* arr = parseCSS(css);
+    assert_true(arr != NULL, "CSS AE bench worst: parseCSS");
     assert_true(arr->count > 0, "CSS AE bench worst: parsed token count > 0");
 
     size_t ae_size = 0;
-    unsigned char* ae_encoded = css_encode_ae(arr, &ae_size);
+    unsigned char* ae_encoded = css_encode_ae(arr, (size_t)arr->count, &ae_size);
     assert_true(ae_encoded != NULL, "CSS AE bench worst: encode non-NULL");
     assert_true(ae_size > 0,        "CSS AE bench worst: encoded size > 0");
 
@@ -2316,9 +2287,8 @@ void test_zlib_compare_css_ae_long_stylesheet(void) {
 
     size_t input_len = strlen(css);
 
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS AE long: alloc");
-    parseCSS(css, arr);
+    CSSTokenArray* arr = parseCSS(css);
+    assert_true(arr != NULL, "CSS AE long: parseCSS");
     assert_true(arr->count > 0, "CSS AE long: parsed token count > 0");
 
     /* Count total CSSTokenizables across all tokens */
@@ -2331,7 +2301,7 @@ void test_zlib_compare_css_ae_long_stylesheet(void) {
     }
 
     size_t ae_size = 0;
-    unsigned char* ae_encoded = css_encode_ae(arr, &ae_size);
+    unsigned char* ae_encoded = css_encode_ae(arr, (size_t)arr->count, &ae_size);
     assert_true(ae_encoded != NULL, "CSS AE long: encode non-NULL");
     assert_true(ae_size > 0,        "CSS AE long: encoded size > 0");
 
@@ -2421,11 +2391,9 @@ void test_css_ae_codec_long_rule(void) {
         "align-items: center; justify-content: center; "
         "background-color: white; color: black; }";
 
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS AE long rule: alloc");
+    CSSTokenArray* arr = parseCSS(css);
+    assert_true(arr != NULL, "CSS AE long rule: parseCSS");
     if (!arr) return;
-
-    parseCSS(css, arr);
     assert_true(arr->count > 0, "CSS AE long rule: parseCSS produced tokens");
     if (arr->count == 0) { free(arr); return; }
 
@@ -2438,7 +2406,7 @@ void test_css_ae_codec_long_rule(void) {
                 "CSS AE long rule: ruleTokenSize >= 20 (exercises renorm)");
 
     size_t ae_size = 0;
-    unsigned char* ae_encoded = css_encode_ae(arr, &ae_size);
+    unsigned char* ae_encoded = css_encode_ae(arr, (size_t)arr->count, &ae_size);
     assert_true(ae_encoded != NULL, "CSS AE long rule: encoded non-NULL");
     assert_true(ae_size > 0,        "CSS AE long rule: encoded size > 0");
     if (!ae_encoded) { free(arr); return; }
@@ -2524,14 +2492,13 @@ static bool css_token_arrays_equal(const CSSTokenArray* a, const CSSTokenArray* 
 void test_css_opt_codec_roundtrip(void) {
     const char* css = "body { color: red; color: red; }";
 
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS opt roundtrip: alloc");
+    CSSTokenArray* arr = parseCSS(css);
+    assert_true(arr != NULL, "CSS opt roundtrip: parseCSS");
     if (!arr) return;
-    parseCSS(css, arr);
     assert_true(arr->count > 0, "CSS opt roundtrip: parsed tokens > 0");
 
     size_t enc_size = 0;
-    unsigned char* enc = css_encode_opt(arr, &enc_size);
+    unsigned char* enc = css_encode_opt(arr, (size_t)arr->count, &enc_size);
     assert_true(enc != NULL, "CSS opt roundtrip: encode non-NULL");
     assert_true(enc_size > 0, "CSS opt roundtrip: encoded size > 0");
 
@@ -2562,17 +2529,16 @@ void test_css_opt_codec_long_roundtrip(void) {
         "align-items: center; justify-content: center; "
         "background-color: white; color: black; }";
 
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS opt long roundtrip: alloc");
+    CSSTokenArray* arr = parseCSS(css);
+    assert_true(arr != NULL, "CSS opt long roundtrip: parseCSS");
     if (!arr) return;
-    parseCSS(css, arr);
     assert_true(arr->count > 0,              "CSS opt long roundtrip: parsed tokens > 0");
     assert_true(arr->tokens[0].type == 0,    "CSS opt long roundtrip: type 0 rule");
     assert_true(arr->tokens[0].data.rule.propertyCount == 6,
                 "CSS opt long roundtrip: 6 properties");
 
     size_t enc_size = 0;
-    unsigned char* enc = css_encode_opt(arr, &enc_size);
+    unsigned char* enc = css_encode_opt(arr, (size_t)arr->count, &enc_size);
     assert_true(enc != NULL, "CSS opt long roundtrip: encode non-NULL");
     assert_true(enc_size > 0, "CSS opt long roundtrip: encoded size > 0");
     if (!enc) { free(arr); return; }
@@ -2639,18 +2605,17 @@ void test_css_opt_compression_ratio(void) {
 
     size_t input_len = strlen(css);
 
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS opt ratio: alloc");
+    CSSTokenArray* arr = parseCSS(css);
+    assert_true(arr != NULL, "CSS opt ratio: parseCSS");
     if (!arr) return;
-    parseCSS(css, arr);
     assert_true(arr->count > 0, "CSS opt ratio: parsed tokens > 0");
 
     size_t opt_size = 0;
-    unsigned char* opt_enc = css_encode_opt(arr, &opt_size);
+    unsigned char* opt_enc = css_encode_opt(arr, (size_t)arr->count, &opt_size);
     assert_true(opt_enc != NULL, "CSS opt ratio: opt encode non-NULL");
 
     size_t ae_size = 0;
-    unsigned char* ae_enc = css_encode_ae(arr, &ae_size);
+    unsigned char* ae_enc = css_encode_ae(arr, (size_t)arr->count, &ae_size);
     assert_true(ae_enc != NULL, "CSS opt ratio: AE encode non-NULL");
 
     double opt_ratio = (double)opt_size / (double)input_len * 100.0;
@@ -2709,17 +2674,16 @@ void test_zlib_compare_css_opt_best_case(void) {
     const char* css = "body { color: red; color: red; }";
     size_t input_len = strlen(css);
 
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS opt best: alloc");
+    CSSTokenArray* arr = parseCSS(css);
+    assert_true(arr != NULL, "CSS opt best: parseCSS");
     if (!arr) return;
-    parseCSS(css, arr);
 
     size_t ae_size = 0;
-    unsigned char* ae_enc = css_encode_ae(arr, &ae_size);
+    unsigned char* ae_enc = css_encode_ae(arr, (size_t)arr->count, &ae_size);
     assert_true(ae_enc != NULL, "CSS opt best: AE encode non-NULL");
 
     size_t opt_size = 0;
-    unsigned char* opt_enc = css_encode_opt(arr, &opt_size);
+    unsigned char* opt_enc = css_encode_opt(arr, (size_t)arr->count, &opt_size);
     assert_true(opt_enc != NULL, "CSS opt best: opt encode non-NULL");
     assert_true(opt_size > 0,    "CSS opt best: encoded size > 0");
 
@@ -2751,17 +2715,16 @@ void test_zlib_compare_css_opt_worst_case(void) {
     const char* css = "a:hover { font-size: 2em; }";
     size_t input_len = strlen(css);
 
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS opt worst: alloc");
+    CSSTokenArray* arr = parseCSS(css);
+    assert_true(arr != NULL, "CSS opt worst: parseCSS");
     if (!arr) return;
-    parseCSS(css, arr);
 
     size_t ae_size = 0;
-    unsigned char* ae_enc = css_encode_ae(arr, &ae_size);
+    unsigned char* ae_enc = css_encode_ae(arr, (size_t)arr->count, &ae_size);
     assert_true(ae_enc != NULL, "CSS opt worst: AE encode non-NULL");
 
     size_t opt_size = 0;
-    unsigned char* opt_enc = css_encode_opt(arr, &opt_size);
+    unsigned char* opt_enc = css_encode_opt(arr, (size_t)arr->count, &opt_size);
     assert_true(opt_enc != NULL, "CSS opt worst: opt encode non-NULL");
     assert_true(opt_size > 0,    "CSS opt worst: encoded size > 0");
 
@@ -2822,10 +2785,9 @@ void test_zlib_compare_css_opt_long_stylesheet(void) {
 
     size_t input_len = strlen(css);
 
-    CSSTokenArray* arr = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
-    assert_true(arr != NULL, "CSS opt long: alloc");
+    CSSTokenArray* arr = parseCSS(css);
+    assert_true(arr != NULL, "CSS opt long: parseCSS");
     if (!arr) return;
-    parseCSS(css, arr);
     assert_true(arr->count > 0, "CSS opt long: parsed tokens > 0");
 
     int total_tokenizables = 0;
@@ -2837,12 +2799,12 @@ void test_zlib_compare_css_opt_long_stylesheet(void) {
     }
 
     size_t ae_size = 0;
-    unsigned char* ae_enc = css_encode_ae(arr, &ae_size);
+    unsigned char* ae_enc = css_encode_ae(arr, (size_t)arr->count, &ae_size);
     assert_true(ae_enc != NULL, "CSS opt long: AE encode non-NULL");
     assert_true(ae_size > 0,    "CSS opt long: AE encoded size > 0");
 
     size_t opt_size = 0;
-    unsigned char* opt_enc = css_encode_opt(arr, &opt_size);
+    unsigned char* opt_enc = css_encode_opt(arr, (size_t)arr->count, &opt_size);
     assert_true(opt_enc != NULL, "CSS opt long: opt encode non-NULL");
     assert_true(opt_size > 0,    "CSS opt long: opt encoded size > 0");
 

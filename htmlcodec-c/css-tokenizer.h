@@ -89,7 +89,7 @@ typedef struct {
     int count;
 } CSSTokenArray;
 
-void parseCSS(const char* css, CSSTokenArray* result);
+CSSTokenArray* parseCSS(const char* css);
 void freeCSS(CSSTokenArray* arr);
 
 /* Req 2 (csscodec): flatten selectorTokens + property name/value tokens of a

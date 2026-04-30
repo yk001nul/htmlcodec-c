@@ -580,8 +580,9 @@ static void css_tokenize_atrule(const char* str,
    Public API
    ========================================================================= */
 
-void parseCSS(const char* css, CSSTokenArray* result) {
-    result->count = 0;
+CSSTokenArray* parseCSS(const char* css) {
+    CSSTokenArray* result = (CSSTokenArray*)calloc(1, sizeof(CSSTokenArray));
+    if (!result) return NULL;
     int i = 0, len = (int)strlen(css);
 
     while (i < len && result->count < CSS_MAX_TOKENS) {
@@ -737,6 +738,7 @@ void parseCSS(const char* css, CSSTokenArray* result) {
 
         if (i < len && css[i] == '}') i++;
     }
+    return result;
 }
 
 void freeCSS(CSSTokenArray* arr) {
