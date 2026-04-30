@@ -134,16 +134,26 @@ static size_t css_total_tokenizables(const CSSTokenArray* arr) {
 
 /* ── css_encode_ae ──────────────────────────────────────────────────────── */
 
-unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t* outSize) {
+unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t count, size_t* outSize) {
     *outSize = 0;
-    if (!arr || arr->count == 0) return NULL;
+    if (!arr || arr->count == 0 || count == 0) return NULL;
+    if (count > (size_t)arr->count) count = (size_t)arr->count;
+
+    /* Compute total CSSTokenizables across the first count tokens */
+    size_t total = 0;
+    for (size_t t = 0; t < count; t++) {
+        const CSSToken* tok = &arr->tokens[t];
+        if      (tok->type == 0) total += (size_t)tok->data.rule.ruleTokenSize;
+        else if (tok->type == 1) total += (size_t)tok->data.atRule.atRuleTokenSize;
+        else                     total += (size_t)tok->data.comment.commentTokenSize;
+    }
+    if (total == 0) return NULL;
 
     /* Build frequency map */
     CSSFreqMap* fmap = collectCSSFrequencies(arr);
     if (!fmap) return NULL;
 
     size_t unique = (size_t)fmap->uniqueCount;
-    size_t total  = (size_t)fmap->totalTokens;
 
     /* Build AESymbol table */
     CSSAESymbol* syms = (CSSAESymbol*)malloc(unique * sizeof(CSSAESymbol));
@@ -168,7 +178,7 @@ unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t* outSize) {
     /* Allocate output buffer.
      * Header: 10 + 11 + unique*22 + 9 + count*12 bits
      * AE stream: total*32 + 64 bits (conservative upper bound)            */
-    size_t header_bits = 10 + 11 + unique * 22 + 9 + (size_t)arr->count * 12;
+    size_t header_bits = 10 + 11 + unique * 22 + 9 + count * 12;
     size_t ae_bits     = total * 32 + 64;
     size_t bytes_needed = (header_bits + ae_bits + 7) / 8;
     unsigned char* buffer = (unsigned char*)calloc(bytes_needed, 1);
@@ -201,10 +211,10 @@ unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t* outSize) {
     }
 
     /* 9 bits: CSSToken count */
-    set_bits(buffer, bp, 9, (unsigned int)arr->count); bp += 9;
+    set_bits(buffer, bp, 9, (unsigned int)count); bp += 9;
 
     /* Per-token: 2-bit type + 10-bit tokenizable size */
-    for (int t = 0; t < arr->count; t++) {
+    for (int t = 0; t < (int)count; t++) {
         const CSSToken* tok = &arr->tokens[t];
         int tokSize = 0;
         if      (tok->type == 0) tokSize = tok->data.rule.ruleTokenSize;
@@ -219,7 +229,7 @@ unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t* outSize) {
     uint32_t lo = 0, hi = 0xFFFFFFFFu;
     int pend = 0;
 
-    for (int t = 0; t < arr->count; t++) {
+    for (int t = 0; t < (int)count; t++) {
         const CSSToken* tok = &arr->tokens[t];
         const CSSTokenizable* src = NULL;
         int srcSize = 0;
@@ -594,11 +604,19 @@ static void css_opt_seed_bigrams(uint32_t* count_table, size_t vocab_size,
 
 /* ── css_encode_opt ─────────────────────────────────────────────────────── */
 
-unsigned char* css_encode_opt(const CSSTokenArray* arr, size_t* outSize) {
+unsigned char* css_encode_opt(const CSSTokenArray* arr, size_t count, size_t* outSize) {
     *outSize = 0;
-    if (!arr || arr->count == 0) return NULL;
+    if (!arr || arr->count == 0 || count == 0) return NULL;
+    if (count > (size_t)arr->count) count = (size_t)arr->count;
 
-    size_t total = css_total_tokenizables(arr);
+    /* Compute total CSSTokenizables across the first count tokens */
+    size_t total = 0;
+    for (size_t t = 0; t < count; t++) {
+        const CSSToken* tok = &arr->tokens[t];
+        if      (tok->type == 0) total += (size_t)tok->data.rule.ruleTokenSize;
+        else if (tok->type == 1) total += (size_t)tok->data.atRule.atRuleTokenSize;
+        else                     total += (size_t)tok->data.comment.commentTokenSize;
+    }
     if (total == 0) return NULL;
 
     /* Pass 1: build vocab in first-appearance order */
@@ -607,7 +625,7 @@ unsigned char* css_encode_opt(const CSSTokenArray* arr, size_t* outSize) {
     if (!vocab) return NULL;
     size_t vocab_size = 0;
 
-    for (int t = 0; t < arr->count; t++) {
+    for (int t = 0; t < (int)count; t++) {
         const CSSToken*       tok = &arr->tokens[t];
         const CSSTokenizable* src;
         int srcSize;
@@ -629,7 +647,7 @@ unsigned char* css_encode_opt(const CSSTokenArray* arr, size_t* outSize) {
     /* Allocate output buffer.
      * Header: 13(total) + 11(vocab_size) + vocab_size*12(max) + 9 + count*12
      * AE:     total*32 + 64 (conservative)                                   */
-    size_t header_bits = 13 + 11 + vocab_size * 12 + 9 + (size_t)arr->count * 12;
+    size_t header_bits = 13 + 11 + vocab_size * 12 + 9 + count * 12;
     size_t ae_bits     = total * 32 + 64;
     size_t buf_bytes   = (header_bits + ae_bits + 7) / 8;
     unsigned char* buffer = (unsigned char*)calloc(buf_bytes, 1);
@@ -653,8 +671,8 @@ unsigned char* css_encode_opt(const CSSTokenArray* arr, size_t* outSize) {
         }
     }
 
-    set_bits(buffer, bp, 9, (unsigned int)arr->count); bp += 9;
-    for (int t = 0; t < arr->count; t++) {
+    set_bits(buffer, bp, 9, (unsigned int)count); bp += 9;
+    for (int t = 0; t < (int)count; t++) {
         const CSSToken* tok = &arr->tokens[t];
         int sz;
         if      (tok->type == 0) sz = tok->data.rule.ruleTokenSize;
@@ -677,7 +695,7 @@ unsigned char* css_encode_opt(const CSSTokenArray* arr, size_t* outSize) {
     int      pend = 0;
     size_t   ctx  = vocab_size;  /* start-of-sequence sentinel row */
 
-    for (int t = 0; t < arr->count; t++) {
+    for (int t = 0; t < (int)count; t++) {
         const CSSToken*       tok = &arr->tokens[t];
         const CSSTokenizable* src;
         int srcSize;

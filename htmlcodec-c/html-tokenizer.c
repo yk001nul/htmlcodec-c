@@ -210,8 +210,7 @@ void enrichHTMLTokenSubdata(HTMLTokenArray* tokens) {
         HTMLToken* next = &tokens->tokens[j];
         if (next->type == 2) {
             if (strcmp(next->data.tag.name, "style") == 0) {
-                token->subdata.css = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
-                parseCSS(token->data.text.content, token->subdata.css);
+                token->subdata.css = parseCSS(token->data.text.content);
                 token->subdataType = HTML_SUBDATA_CSS;
             } else if (strcmp(next->data.tag.name, "script") == 0) {
                 token->subdata.js = tokenizeJavaScript(token->data.text.content);
@@ -231,8 +230,7 @@ void enrichHTMLTokenSubdata(HTMLTokenArray* tokens) {
         for (int a = 0; a < token->data.tag.attrCount; a++) {
             HTMLAttribute* attr = &token->data.tag.attributes[a];
             if (strcmp(attr->name, "style") == 0) {
-                attr->subdata.css = (CSSTokenArray*)malloc(sizeof(CSSTokenArray));
-                parseCSS(attr->value, attr->subdata.css);
+                attr->subdata.css = parseCSS(attr->value);
                 attr->subdataType = HTML_SUBDATA_CSS;
             } else if (startsWithOn(attr->name)) {
                 attr->subdata.js = tokenizeJavaScript(attr->value);
