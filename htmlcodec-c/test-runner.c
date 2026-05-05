@@ -136,6 +136,18 @@ int main(void) {
     test_zlib_compare_cljs_ae_opt_short();
     test_zlib_compare_cljs_ae_opt_long();
 
+    printf("\n--- HTML CODEC TESTS ---\n");
+    test_html_codec_codebook_no_duplicates();
+    test_html_codec_roundtrip_short();
+    test_html_codec_roundtrip_with_attrs();
+    test_html_codec_roundtrip_with_subdata();
+    test_html_codec_roundtrip_unknown_tag();
+    test_html_codec_worst_case();
+
+    printf("\n--- ZLIB VS HTML AE BENCHMARK TESTS ---\n");
+    test_zlib_compare_html_codec_short();
+    test_zlib_compare_html_codec_long();
+
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
 

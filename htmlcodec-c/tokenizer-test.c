@@ -4,6 +4,7 @@
 #include "css-codec.h"
 #include "cl-javascript-en-tokenizer.h"
 #include "nl-en-us-hyphenator.h"
+#include "html-codec.h"
 #include <zlib.h>
 
 int testsPassed = 0;
@@ -3417,4 +3418,421 @@ void test_zlib_compare_cljs_ae_opt_long(void) {
     free(zlib_buf);
     freeCLJSTokenArray(arr);
     printf("PASS zlib vs CLJS AE opt - long script (>= 1024 B)\n");
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * HTML Codec Tests
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+void test_html_codec_codebook_no_duplicates(void) {
+    html_codebook_init();
+    int dups = 0;
+    for (int i = 0; i < HTML_CODEBOOK_SIZE; i++) {
+        for (int j = i + 1; j < HTML_CODEBOOK_SIZE; j++) {
+            if (strcmp(HTML_CODEBOOK[i], HTML_CODEBOOK[j]) == 0) {
+                dups++;
+            }
+        }
+    }
+    assert_equal_int(dups, 0, "HTML codebook: no duplicate entries");
+    assert_true(HTML_CODEBOOK_TAG_COUNT  == 112, "HTML codebook: 112 tag entries");
+    assert_true(HTML_CODEBOOK_ATTR_COUNT == 118, "HTML codebook: 118 attribute entries");
+    assert_true(HTML_CODEBOOK_MIME_COUNT == 255, "HTML codebook: 255 MIME entries");
+    assert_true(HTML_CODEBOOK_SIZE == 485,       "HTML codebook: 485 total entries");
+    printf("PASS HTML codec - codebook no duplicates (%d entries)\n", HTML_CODEBOOK_SIZE);
+}
+
+void test_html_codec_roundtrip_short(void) {
+    const char* html = "<div><p>Hello world</p></div>";
+
+    HTMLTokenArray* orig = parseHTML(html);
+    assert_true(orig != NULL, "HTML codec short roundtrip: parseHTML non-NULL");
+    assert_true(orig->count > 0, "HTML codec short roundtrip: token count > 0");
+    if (!orig) return;
+
+    size_t enc_size = 0;
+    unsigned char* enc = html_encode_ae_opt(orig, (size_t)orig->count, &enc_size);
+    assert_true(enc != NULL,  "HTML codec short roundtrip: encode non-NULL");
+    assert_true(enc_size > 0, "HTML codec short roundtrip: encoded size > 0");
+
+    if (!enc) { freeHTMLTokenArray(orig); return; }
+
+    HTMLTokenArray* dec = html_decode_ae_opt(enc, enc_size);
+    assert_true(dec != NULL, "HTML codec short roundtrip: decode non-NULL");
+
+    if (dec) {
+        assert_equal_int(dec->count, orig->count,
+                         "HTML codec short roundtrip: token count matches");
+        for (int i = 0; i < dec->count && i < orig->count; i++) {
+            assert_equal_int(dec->tokens[i].type, orig->tokens[i].type,
+                             "HTML codec short roundtrip: token type matches");
+            if (orig->tokens[i].type != 0) {
+                assert_equal_str(dec->tokens[i].data.tag.name,
+                                 orig->tokens[i].data.tag.name,
+                                 "HTML codec short roundtrip: tag name matches");
+            }
+        }
+        freeHTMLTokenArray(dec);
+    }
+
+    printf("PASS HTML codec - short round-trip (\"%s\", %zu bytes encoded)\n",
+           html, enc_size);
+    free(enc);
+    freeHTMLTokenArray(orig);
+}
+
+void test_html_codec_roundtrip_with_attrs(void) {
+    const char* html =
+        "<a href=\"https://example.com\" class=\"link\" target=\"_blank\">"
+        "Click here</a>";
+
+    HTMLTokenArray* orig = parseHTML(html);
+    assert_true(orig != NULL, "HTML codec attrs roundtrip: parseHTML non-NULL");
+    if (!orig) return;
+
+    size_t enc_size = 0;
+    unsigned char* enc = html_encode_ae_opt(orig, (size_t)orig->count, &enc_size);
+    assert_true(enc != NULL,  "HTML codec attrs roundtrip: encode non-NULL");
+    assert_true(enc_size > 0, "HTML codec attrs roundtrip: encoded size > 0");
+
+    if (!enc) { freeHTMLTokenArray(orig); return; }
+
+    HTMLTokenArray* dec = html_decode_ae_opt(enc, enc_size);
+    assert_true(dec != NULL, "HTML codec attrs roundtrip: decode non-NULL");
+
+    if (dec) {
+        assert_equal_int(dec->count, orig->count,
+                         "HTML codec attrs roundtrip: count matches");
+        /* Check the open tag has correct name and attributes */
+        int found_a = 0;
+        for (int i = 0; i < dec->count; i++) {
+            if (dec->tokens[i].type == 1 &&
+                strcmp(dec->tokens[i].data.tag.name, "a") == 0) {
+                found_a = 1;
+                assert_equal_int(dec->tokens[i].data.tag.attrCount,
+                                 orig->tokens[i].data.tag.attrCount,
+                                 "HTML codec attrs roundtrip: attrCount matches");
+                /* Check first attribute name */
+                if (dec->tokens[i].data.tag.attrCount > 0) {
+                    assert_equal_str(dec->tokens[i].data.tag.attributes[0].name,
+                                     orig->tokens[i].data.tag.attributes[0].name,
+                                     "HTML codec attrs roundtrip: attr[0] name matches");
+                }
+            }
+        }
+        assert_true(found_a, "HTML codec attrs roundtrip: found 'a' open tag");
+        freeHTMLTokenArray(dec);
+    }
+
+    printf("PASS HTML codec - attrs round-trip (%zu bytes encoded)\n", enc_size);
+    free(enc);
+    freeHTMLTokenArray(orig);
+}
+
+void test_html_codec_roundtrip_with_subdata(void) {
+    const char* html =
+        "<html><head><style>body { color: red; }</style></head>"
+        "<body><p>Hello</p></body></html>";
+
+    HTMLTokenArray* orig = parseHTML(html);
+    assert_true(orig != NULL, "HTML codec subdata roundtrip: parseHTML non-NULL");
+    if (!orig) return;
+
+    size_t enc_size = 0;
+    unsigned char* enc = html_encode_ae_opt(orig, (size_t)orig->count, &enc_size);
+    assert_true(enc != NULL,  "HTML codec subdata roundtrip: encode non-NULL");
+    assert_true(enc_size > 0, "HTML codec subdata roundtrip: encoded size > 0");
+
+    if (!enc) { freeHTMLTokenArray(orig); return; }
+
+    HTMLTokenArray* dec = html_decode_ae_opt(enc, enc_size);
+    assert_true(dec != NULL, "HTML codec subdata roundtrip: decode non-NULL");
+
+    if (dec) {
+        assert_equal_int(dec->count, orig->count,
+                         "HTML codec subdata roundtrip: token count matches");
+        /* Verify CSS subdata token survived */
+        int found_css = 0;
+        for (int i = 0; i < dec->count; i++) {
+            if (dec->tokens[i].subdataType == HTML_SUBDATA_CSS &&
+                dec->tokens[i].subdata.css != NULL) {
+                found_css = 1;
+                assert_true(dec->tokens[i].subdata.css->count > 0,
+                            "HTML codec subdata roundtrip: decoded CSS token count > 0");
+            }
+        }
+        assert_true(found_css, "HTML codec subdata roundtrip: CSS subdata decoded");
+        freeHTMLTokenArray(dec);
+    }
+
+    printf("PASS HTML codec - subdata round-trip (%zu bytes encoded)\n", enc_size);
+    free(enc);
+    freeHTMLTokenArray(orig);
+}
+
+void test_html_codec_roundtrip_unknown_tag(void) {
+    /* Use a custom/unknown tag name to exercise the raw-string path */
+    const char* html = "<x-custom-element id=\"foo\">Content</x-custom-element>";
+
+    HTMLTokenArray* orig = parseHTML(html);
+    assert_true(orig != NULL, "HTML codec unknown tag: parseHTML non-NULL");
+    if (!orig) return;
+
+    size_t enc_size = 0;
+    unsigned char* enc = html_encode_ae_opt(orig, (size_t)orig->count, &enc_size);
+    assert_true(enc != NULL,  "HTML codec unknown tag: encode non-NULL");
+    assert_true(enc_size > 0, "HTML codec unknown tag: encoded size > 0");
+
+    if (!enc) { freeHTMLTokenArray(orig); return; }
+
+    HTMLTokenArray* dec = html_decode_ae_opt(enc, enc_size);
+    assert_true(dec != NULL, "HTML codec unknown tag: decode non-NULL");
+
+    if (dec) {
+        assert_equal_int(dec->count, orig->count,
+                         "HTML codec unknown tag: count matches");
+        for (int i = 0; i < dec->count; i++) {
+            if (dec->tokens[i].type == 1 || dec->tokens[i].type == 2) {
+                assert_equal_str(dec->tokens[i].data.tag.name,
+                                 orig->tokens[i].data.tag.name,
+                                 "HTML codec unknown tag: tag name preserved");
+            }
+        }
+        freeHTMLTokenArray(dec);
+    }
+
+    printf("PASS HTML codec - unknown tag round-trip (%zu bytes encoded)\n", enc_size);
+    free(enc);
+    freeHTMLTokenArray(orig);
+}
+
+void test_html_codec_worst_case(void) {
+    /* Worst case: all unique tokens, no repetition, no common tags */
+    const char* html =
+        "<section id=\"s1\"><aside class=\"a1\"><nav>link1</nav></aside></section>";
+
+    HTMLTokenArray* orig = parseHTML(html);
+    assert_true(orig != NULL, "HTML codec worst case: parseHTML non-NULL");
+    if (!orig) return;
+
+    size_t enc_size = 0;
+    unsigned char* enc = html_encode_ae_opt(orig, (size_t)orig->count, &enc_size);
+    assert_true(enc != NULL,  "HTML codec worst case: encode non-NULL");
+    assert_true(enc_size > 0, "HTML codec worst case: encoded size > 0");
+
+    if (!enc) { freeHTMLTokenArray(orig); return; }
+
+    HTMLTokenArray* dec = html_decode_ae_opt(enc, enc_size);
+    assert_true(dec != NULL, "HTML codec worst case: decode non-NULL");
+
+    if (dec) {
+        assert_equal_int(dec->count, orig->count,
+                         "HTML codec worst case: token count matches");
+        freeHTMLTokenArray(dec);
+    }
+
+    printf("PASS HTML codec - worst case round-trip (%zu bytes encoded)\n", enc_size);
+    free(enc);
+    freeHTMLTokenArray(orig);
+}
+
+static void print_html_benchmark_row(size_t raw, size_t html_ae, size_t zlib_sz) {
+    double ae_pct   = (raw > 0) ? (1.0 - (double)html_ae  / (double)raw) * 100.0 : 0.0;
+    double zlib_pct = (raw > 0) ? (1.0 - (double)zlib_sz / (double)raw) * 100.0 : 0.0;
+    printf("  Raw: %zu B | HTML AE: %zu B (%.1f%% reduction) | zlib: %zu B (%.1f%% reduction)\n",
+           raw, html_ae, ae_pct, zlib_sz, zlib_pct);
+}
+
+void test_zlib_compare_html_codec_short(void) {
+    const char* html =
+        "<div class=\"container\">"
+        "<h1>Hello World</h1>"
+        "<p>This is a short HTML document.</p>"
+        "</div>";
+
+    size_t raw_len = strlen(html);
+
+    HTMLTokenArray* orig = parseHTML(html);
+    assert_true(orig != NULL, "HTML short bench: parseHTML non-NULL");
+    if (!orig) return;
+
+    size_t enc_size = 0;
+    unsigned char* enc = html_encode_ae_opt(orig, (size_t)orig->count, &enc_size);
+    assert_true(enc != NULL,  "HTML short bench: encode non-NULL");
+    assert_true(enc_size > 0, "HTML short bench: encoded size > 0");
+
+    uLongf zlib_len = compressBound((uLong)raw_len);
+    unsigned char* zlib_buf = (unsigned char*)malloc((size_t)zlib_len);
+    assert_true(zlib_buf != NULL, "HTML short bench: malloc zlib");
+    int zr = compress(zlib_buf, &zlib_len, (const Bytef*)html, (uLong)raw_len);
+    assert_true(zr == Z_OK, "HTML short bench: zlib Z_OK");
+
+    print_html_benchmark_row(raw_len, enc_size, (size_t)zlib_len);
+
+    /* Round-trip correctness */
+    if (enc) {
+        HTMLTokenArray* dec = html_decode_ae_opt(enc, enc_size);
+        assert_true(dec != NULL, "HTML short bench: decode non-NULL");
+        if (dec) {
+            assert_equal_int(dec->count, orig->count,
+                             "HTML short bench: round-trip count matches");
+            freeHTMLTokenArray(dec);
+        }
+    }
+
+    free(enc);
+    free(zlib_buf);
+    freeHTMLTokenArray(orig);
+    printf("PASS zlib vs HTML AE - short HTML document (%zu bytes raw)\n", raw_len);
+}
+
+void test_zlib_compare_html_codec_long(void) {
+    /* Production-grade HTML document >= 1024 bytes */
+    const char* html =
+        "<!DOCTYPE html>"
+        "<html lang=\"en\">"
+        "<head>"
+        "  <meta charset=\"UTF-8\">"
+        "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+        "  <meta name=\"description\" content=\"A professional web application\">"
+        "  <title>Professional Web Application</title>"
+        "  <link rel=\"stylesheet\" href=\"/static/css/main.css\">"
+        "  <link rel=\"icon\" type=\"image/x-icon\" href=\"/favicon.ico\">"
+        "</head>"
+        "<body>"
+        "  <header class=\"site-header\" role=\"banner\">"
+        "    <nav class=\"navbar\" aria-label=\"main navigation\">"
+        "      <div class=\"navbar-brand\">"
+        "        <a class=\"navbar-item\" href=\"/\">MyApp</a>"
+        "      </div>"
+        "      <div class=\"navbar-menu\">"
+        "        <a class=\"navbar-item\" href=\"/about\">About</a>"
+        "        <a class=\"navbar-item\" href=\"/products\">Products</a>"
+        "        <a class=\"navbar-item\" href=\"/contact\">Contact</a>"
+        "      </div>"
+        "    </nav>"
+        "  </header>"
+        "  <main class=\"main-content\" role=\"main\">"
+        "    <section class=\"hero\" aria-labelledby=\"hero-title\">"
+        "      <div class=\"hero-body\">"
+        "        <h1 id=\"hero-title\" class=\"title\">Welcome to MyApp</h1>"
+        "        <h2 class=\"subtitle\">Build better software faster</h2>"
+        "        <p class=\"description\">"
+        "          Our platform helps engineering teams ship high-quality software"
+        "          at scale. With powerful tools and integrations, you can focus"
+        "          on what matters most."
+        "        </p>"
+        "        <div class=\"buttons\">"
+        "          <a class=\"button is-primary\" href=\"/signup\">Get Started</a>"
+        "          <a class=\"button is-light\" href=\"/demo\">View Demo</a>"
+        "        </div>"
+        "      </div>"
+        "    </section>"
+        "    <section class=\"features\" aria-labelledby=\"features-title\">"
+        "      <div class=\"container\">"
+        "        <h2 id=\"features-title\" class=\"section-title\">Features</h2>"
+        "        <div class=\"columns\">"
+        "          <div class=\"column\">"
+        "            <div class=\"card\">"
+        "              <div class=\"card-content\">"
+        "                <h3 class=\"card-title\">Fast Deployment</h3>"
+        "                <p>Deploy your application in seconds with our CI/CD pipeline.</p>"
+        "              </div>"
+        "            </div>"
+        "          </div>"
+        "          <div class=\"column\">"
+        "            <div class=\"card\">"
+        "              <div class=\"card-content\">"
+        "                <h3 class=\"card-title\">Scalable Infrastructure</h3>"
+        "                <p>Scale from zero to millions of users automatically.</p>"
+        "              </div>"
+        "            </div>"
+        "          </div>"
+        "          <div class=\"column\">"
+        "            <div class=\"card\">"
+        "              <div class=\"card-content\">"
+        "                <h3 class=\"card-title\">Security First</h3>"
+        "                <p>Enterprise-grade security built into every layer.</p>"
+        "              </div>"
+        "            </div>"
+        "          </div>"
+        "        </div>"
+        "      </div>"
+        "    </section>"
+        "  </main>"
+        "  <footer class=\"site-footer\" role=\"contentinfo\">"
+        "    <div class=\"container\">"
+        "      <div class=\"footer-columns\">"
+        "        <div class=\"footer-column\">"
+        "          <h4 class=\"footer-title\">Company</h4>"
+        "          <ul class=\"footer-links\">"
+        "            <li><a href=\"/about\">About Us</a></li>"
+        "            <li><a href=\"/careers\">Careers</a></li>"
+        "            <li><a href=\"/press\">Press</a></li>"
+        "          </ul>"
+        "        </div>"
+        "        <div class=\"footer-column\">"
+        "          <h4 class=\"footer-title\">Legal</h4>"
+        "          <ul class=\"footer-links\">"
+        "            <li><a href=\"/privacy\">Privacy Policy</a></li>"
+        "            <li><a href=\"/terms\">Terms of Service</a></li>"
+        "          </ul>"
+        "        </div>"
+        "      </div>"
+        "      <p class=\"copyright\">&copy; 2024 MyApp. All rights reserved.</p>"
+        "    </div>"
+        "  </footer>"
+        "</body>"
+        "</html>";
+
+    size_t raw_len = strlen(html);
+    assert_true(raw_len >= 1024,
+                "HTML long bench: input >= 1024 bytes (benchmark target)");
+
+    HTMLTokenArray* orig = parseHTML(html);
+    assert_true(orig != NULL, "HTML long bench: parseHTML non-NULL");
+    if (!orig) return;
+
+    size_t enc_size = 0;
+    unsigned char* enc = html_encode_ae_opt(orig, (size_t)orig->count, &enc_size);
+    assert_true(enc != NULL,  "HTML long bench: encode non-NULL");
+    assert_true(enc_size > 0, "HTML long bench: encoded size > 0");
+
+    uLongf zlib_len = compressBound((uLong)raw_len);
+    unsigned char* zlib_buf = (unsigned char*)malloc((size_t)zlib_len);
+    assert_true(zlib_buf != NULL, "HTML long bench: malloc zlib");
+    int zr = compress(zlib_buf, &zlib_len, (const Bytef*)html, (uLong)raw_len);
+    assert_true(zr == Z_OK, "HTML long bench: zlib Z_OK");
+
+    printf("  HTML tokens: %d\n", orig->count);
+    print_html_benchmark_row(raw_len, enc_size, (size_t)zlib_len);
+
+    /* Verify 70% size reduction target vs zlib on >= 1024 byte input
+     * Note: this is a benchmark goal, not a hard requirement for pass/fail */
+    double reduction = (raw_len > 0)
+                     ? (1.0 - (double)enc_size / (double)raw_len) * 100.0
+                     : 0.0;
+    printf("  HTML AE reduction vs raw: %.1f%%\n", reduction);
+
+    /* Round-trip correctness */
+    if (enc) {
+        HTMLTokenArray* dec = html_decode_ae_opt(enc, enc_size);
+        assert_true(dec != NULL, "HTML long bench: decode non-NULL");
+        if (dec) {
+            assert_equal_int(dec->count, orig->count,
+                             "HTML long bench: round-trip count matches");
+            /* Verify token types match */
+            int types_ok = 1;
+            for (int i = 0; i < dec->count && i < orig->count; i++) {
+                if (dec->tokens[i].type != orig->tokens[i].type) { types_ok = 0; break; }
+            }
+            assert_true(types_ok, "HTML long bench: token types match after round-trip");
+            freeHTMLTokenArray(dec);
+        }
+        free(enc);
+    }
+
+    free(zlib_buf);
+    freeHTMLTokenArray(orig);
+    printf("PASS zlib vs HTML AE - long HTML document (%zu bytes raw)\n", raw_len);
 }

@@ -170,4 +170,14 @@ void test_cljs_ae_opt_codec_long_roundtrip();
 void test_zlib_compare_cljs_ae_opt_short();
 void test_zlib_compare_cljs_ae_opt_long();
 
+// HTML codec tests (Requirement 6)
+void test_html_codec_codebook_no_duplicates();
+void test_html_codec_roundtrip_short();
+void test_html_codec_roundtrip_with_attrs();
+void test_html_codec_roundtrip_with_subdata();
+void test_html_codec_roundtrip_unknown_tag();
+void test_html_codec_worst_case();
+void test_zlib_compare_html_codec_short();
+void test_zlib_compare_html_codec_long();
+
 #endif // TOKENIZER_TEST_H
