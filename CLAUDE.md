@@ -271,40 +271,40 @@ The short case already beats zlib below 100 bytes. The long case (1921 B, ≥ 10
 
 ### Encoding Format (HTML AE Opt Codec)
 
-Bit stream structure produced by `html_encode_ae_opt` / decoded by `html_decode_ae_opt`:
+Bit stream structure produced by `html_encode_ae_opt` / decoded by `html_decode_ae_opt` (Steps 1–6):
 
 - 10 bits: token count (`HTMLTokenArray.count`)
-- Per token (type=0, text):
-  - 12 bits: NL payload byte length
-  - N bytes: `nl_en_encode_opt()` bitstream for `textTokenArray`
-  - 2 bits: `subdataType` (0=NONE, 1=CSS, 2=JS, 3=NL)
-  - 12 bits: subdata payload byte length (0 if NONE)
-  - M bytes: sub-codec payload (`css_encode_opt`, `cljs_encode_ae_opt`, or `nl_en_encode_opt`)
-- Per token (type=1 open or type=2 close):
-  - 2 bits: token type (1=open, 2=close)
-  - 9 bits: tag flag (0–111 codebook, 485=FLAG\_RAW)
-  - If FLAG\_RAW: 6 bits length + length × 8 bits raw ASCII
-  - 1 bit: `selfClosing` (open tags only)
-  - 5 bits: `attrCount` (open tags only)
-  - Per attribute:
-    - 9 bits: attr flag (112–229 codebook, 485=FLAG\_RAW)
-    - If FLAG\_RAW: 6 bits length + length × 8 bits raw ASCII
-    - 2 bits: attr `subdataType`
-    - 7 bits: attr value byte length (raw ASCII, max 127)
-    - value\_len × 8 bits: raw ASCII value (if NONE) or sub-codec payload
+- **[Step 3 — attr-value dictionary]** 5 bits `dict_size` (0–31); per entry: 7 bits `str_len` + `str_len`×8 bits raw chars
+- **[Step 4 — codebook AE]** 12 bits `cb_sym_count` (total tag+attr flag symbols); 9 bits `cb_vocab_size` (unique symbols, max 486); `cb_vocab_size`×9 bits symbol values (0–485); VLC `cb_ae_bytes`; `cb_ae_bytes` bytes: order-1 adaptive AE payload for all tag/attr flag symbols
+- **[Step 1 — global NL stream]** 10 bits `text_tok_count`; `text_tok_count`×10 bits `nl_token_count` boundary table (0 = whitespace-only or subdataType≠NONE); VLC `global_nl_bytes`; `global_nl_bytes` bytes: single `nl_en_encode_opt()` payload merging text tokens with `subdataType=NONE` and non-whitespace content
+- Per token (2-bit type first):
+  - type=0 (text): 2 bits `subdataType`; if >0: VLC `sub_bytes` + `sub_bytes` bytes sub-codec payload
+  - type=1 or 2 (tag/close): *no flag field* (consumed from codebook AE pre-stream); if FLAG\_RAW: 6 bits length + length×8 bits raw ASCII; 1 bit `selfClosing`; 5 bits `attrCount`; per attribute: *no flag field* (from AE stream); if FLAG\_RAW: 6 bits length + length×8 bits; 2 bits attr `subdataType`; if NONE: 1 bit `dict_hit` + (5 bits dict\_index | 7 bits value\_len + value\_len×8 bits raw); if CSS/JS/NL: 7 bits `sub_len` + `sub_len`×8 bits
 
-Tag and attribute names are lowercased before codebook lookup. Unknown names (not in codebook) fall back to FLAG\_RAW with up to 63 raw ASCII chars. Inline CSS/JS attribute values (from `style` / `on*` attributes) are encoded via their respective sub-codecs; all other attribute values are stored as raw ASCII.
+**Step 1:** Non-whitespace, `subdataType=NONE` text tokens are merged into one `nl_en_encode_opt()` call. A boundary table (one 10-bit entry per text token) records each token's NL count; the decoder slices the merged array accordingly.
+
+**Step 2:** Whitespace-only text tokens contribute 0 to the boundary table and are excluded from the NL merge. Decoded content is empty string.
+
+**Step 3:** Up to 32 most-frequent raw attribute values (by `freq × len` score) are stored in a header dictionary. Each `subdataType=NONE` attribute value writes a 1-bit `dict_hit` flag; hits use a 5-bit index; misses use 7-bit length + raw bytes.
+
+**Step 4:** Tag and attribute codebook flags (values 0–485) are extracted in a first pass, AE-encoded as a self-contained payload using an order-1 adaptive model (Laplace-initialised `count[ctx][sym]` table, `vocab_size+1` rows). The decoder pre-decodes all symbols before the per-token loop; each tag/attr consumes the next pre-decoded symbol rather than reading a 9-bit fixed flag.
+
+**Step 5:** Text tokens with `subdataType≠NONE` are excluded from the global NL merge (their content is redundantly stored in the sub-codec payload). For `subdataType=NL` tokens, the decoder reconstructs `data.text.content` from `nl_tokens_to_string(subdata.nl)`.
+
+**Step 6:** Subdata payload lengths (previously 12-bit fixed) are now VLC-encoded: 8 bits for lengths 0–127, 16 bits for 128–16383. The global NL section length also uses VLC.
+
+Tag and attribute names are lowercased before codebook lookup. Unknown names fall back to FLAG\_RAW with up to 63 raw ASCII chars. Inline CSS/JS attribute values (from `style` / `on*` attributes) are encoded via their respective sub-codecs.
 
 ### zlib vs HTML AE Benchmark
 
 Two benchmark tests compare `html_encode_ae_opt` output size against zlib applied to the raw HTML string:
 
-| Case | Raw HTML | HTML AE | zlib | Notes |
-|------|----------|:-------:|:----:|-------|
-| Short | 86 B (5 tags, inline CSS) | ~121 B | ~89 B | sub-codec framing overhead dominates on small inputs |
-| Long  | 3358 B (235 tokens, full webpage) | ~3470 B | ~1070 B | structured serialization overhead vs zlib general-purpose |
+| Case | Raw HTML | HTML AE (Steps 1–6) | zlib | Notes |
+|------|----------|:-------------------:|:----:|-------|
+| Short | 86 B (5 tags, inline CSS) | ~80 B | ~89 B | beats zlib on this input after Steps 4–6 |
+| Long  | 3358 B (235 tokens, full webpage) | ~2028 B (39.6% reduction) | ~1070 B | Steps 1–6 combined save ~1330 B vs baseline ~3470 B (+3.3%) |
 
-The HTML codec trades compression ratio for structured semantics: each sub-payload (NL text, inline CSS, inline JS) is independently encoded and decodable. The codec is intended for selective partial decoding (e.g., extracting only text nodes, only CSS, only tag structure) rather than maximum byte reduction. zlib significantly outperforms on whole-document compression because it can exploit byte-level repetition across token boundaries that the structured format prevents.
+Steps 1–6 achieve **39.6% reduction** on the long test document (3358 B → 2028 B). The codec beats zlib on the short input (80 B vs 89 B). Step 4 (codebook AE) contributed the largest additional gain over Steps 1–3 (21.6% → 39.6%) by eliminating ~600 B of fixed 9-bit tag/attr flag overhead. The remaining gap to zlib (~1070 B) reflects structured per-token serialisation overhead; the realistic ceiling for this architecture is ~55–60% on this document.
 
 ### Test Structure
 

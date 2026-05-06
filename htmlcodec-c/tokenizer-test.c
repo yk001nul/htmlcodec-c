@@ -3807,12 +3807,14 @@ void test_zlib_compare_html_codec_long(void) {
     printf("  HTML tokens: %d\n", orig->count);
     print_html_benchmark_row(raw_len, enc_size, (size_t)zlib_len);
 
-    /* Verify 70% size reduction target vs zlib on >= 1024 byte input
-     * Note: this is a benchmark goal, not a hard requirement for pass/fail */
+    /* After Steps 1-6 (global NL, whitespace elision, attr dict, codebook AE,
+     * skip redundant NL, VLC lengths): target is >= 35% reduction. */
     double reduction = (raw_len > 0)
                      ? (1.0 - (double)enc_size / (double)raw_len) * 100.0
                      : 0.0;
     printf("  HTML AE reduction vs raw: %.1f%%\n", reduction);
+    assert_true(reduction >= 35.0,
+                "HTML long bench: Steps 1-6 achieve >= 35% reduction vs raw");
 
     /* Round-trip correctness */
     if (enc) {

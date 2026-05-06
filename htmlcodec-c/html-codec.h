@@ -22,29 +22,35 @@ void html_codebook_init(void);
 /**
  * Encodes an HTMLTokenArray into a compact binary stream.
  *
- * Top-level bitstream layout:
+ * Bitstream layout (Steps 1–3 optimisation):
  *   10 bits : HTMLToken count
- *   Per token:
- *     2 bits : type (0=text, 1=openTag, 2=closeTag)
- *     If type == 0 (text):
- *       12 bits : byte count of nl_en_encode_opt(textTokenArray), 0 = absent
- *       variable : encoded textTokenArray bytes
+ *   [Step 3 — attr-value dictionary]
+ *     5 bits : dict_size (0–31)
+ *     Per dict entry: 7 bits str_len + str_len×8 bits raw chars
+ *   [Step 1 — global NL stream]
+ *     10 bits : text_tok_count (total text tokens)
+ *     text_tok_count × 10 bits : nl_token_count per text token (0 = whitespace/empty)
+ *     13 bits : global_nl_bytes
+ *     global_nl_bytes bytes : nl_en_encode_opt() payload for all text NL tokens
+ *   Per token (2 bits type first):
+ *     type == 0 (text):
  *       2 bits  : subdataType
  *       If subdataType > 0:
- *         12 bits : byte count of encoded subdata
- *         variable : encoded CSS/JS/NL bytes
- *     Else (type 1 or 2):
+ *         12 bits : sub_bytes; sub_bytes bytes sub-codec payload
+ *     type == 1 or 2 (tag):
  *       9 bits : tagFlag (0..TAG_COUNT-1 = codebook, CODEBOOK_SIZE = raw)
- *       If tagFlag == CODEBOOK_SIZE:
- *         6 bits + ASCII bytes : raw tag name
+ *       If raw: 6 bits length + length×8 bits ASCII
  *       1 bit  : selfClosing
  *       5 bits : attrCount
  *       Per attribute:
  *         9 bits : attrNameFlag (ATTR_START..MIME_START-1 or CODEBOOK_SIZE)
- *         If raw: 6 bits + ASCII bytes
- *         2 bits : attrValueSubdataType (0=raw ASCII, 1=CSS, 2=JS, 3=NL)
- *         7 bits : byte count of encoded attr value (max 127)
- *         variable : encoded bytes
+ *         If raw: 6 bits length + length×8 bits ASCII
+ *         2 bits : attrValueSubdataType (0=raw/dict, 1=CSS, 2=JS, 3=NL)
+ *         If subdataType == 0 (NONE):
+ *           1 bit dict_hit; if hit: 5 bits dict_index
+ *                           if miss: 7 bits value_len + value_len×8 bits ASCII
+ *         Else (CSS/JS/NL):
+ *           7 bits sub_len + sub_len×8 bits sub-codec payload
  *
  * @param arr     HTMLTokenArray to encode
  * @param count   Number of tokens (must be <= arr->count)
