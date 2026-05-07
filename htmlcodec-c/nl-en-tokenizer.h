@@ -63,4 +63,12 @@ extern const char* NL_EN_WORD_PATTERNS[NL_EN_WORD_COUNT];
  */
 NLTokenArray* tokenizeEnglishOpt(const char* input);
 
+/**
+ * Reconstruct the original string from an NLTokenArray.
+ * Caller must free() the returned buffer.
+ * *cumLen receives the number of bytes written (excluding null terminator).
+ * Requires patterns to be initialized (call tokenizeEnglish/tokenizeEnglishOpt first).
+ */
+char* detokenizeNLTokenArray(const NLTokenArray* arr, int* cumLen);
+
 #endif // NL_EN_TOKENIZER_H

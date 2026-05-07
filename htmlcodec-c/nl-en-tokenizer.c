@@ -300,3 +300,58 @@ NLFreqMap* collectNLFrequencies(const NLTokenArray* arr) {
 void freeNLFreqMap(NLFreqMap* map) {
     free(map);
 }
+
+char* detokenizeNLTokenArray(const NLTokenArray* arr, int* cumLen) {
+    if (!arr || !cumLen) return NULL;
+    /* Max syllable pattern: 7 chars ("counter"); max word pattern: 8 chars. */
+    size_t bufSize = arr->count * 8 + 1;
+    char* result = (char*)calloc(bufSize, 1);
+    if (!result) return NULL;
+    *cumLen = 0;
+    for (size_t i = 0; i < arr->count; i++) {
+        if (*cumLen >= (int)bufSize - 1) break;
+        const NLToken* tok = &arr->tokens[i];
+        if (tok->isPattern) {
+            const char* pattern;
+            if (tok->flag < NL_EN_PATTERN_COUNT) {
+                pattern = NL_EN_PATTERNS[tok->flag];
+            } else {
+                pattern = NL_EN_WORD_PATTERNS[tok->flag - NL_EN_PATTERN_COUNT];
+            }
+            size_t pLen = strlen(pattern);
+            char tmp[32];
+            if (pLen > sizeof(tmp) - 1) pLen = sizeof(tmp) - 1;
+            memcpy(tmp, pattern, pLen);
+            tmp[pLen] = '\0';
+            switch (tok->caseStyle) {
+                case 1:
+                    for (size_t j = 0; j < pLen; j++)
+                        if (isalpha((unsigned char)tmp[j]))
+                            tmp[j] = toupper((unsigned char)tmp[j]);
+                    break;
+                case 2:
+                    for (size_t j = 0; j < pLen; j++)
+                        if (isalpha((unsigned char)tmp[j]))
+                            tmp[j] = (j == 0) ? toupper((unsigned char)tmp[j])
+                                               : tolower((unsigned char)tmp[j]);
+                    break;
+                case 3:
+                    for (size_t j = 0; j < pLen; j++)
+                        if (isalpha((unsigned char)tmp[j]))
+                            tmp[j] = (j == pLen - 1) ? toupper((unsigned char)tmp[j])
+                                                      : tolower((unsigned char)tmp[j]);
+                    break;
+                default: break; /* case 0: already lowercase */
+            }
+            size_t copy = pLen;
+            if (*cumLen + (int)copy > (int)bufSize - 1)
+                copy = (size_t)((int)bufSize - 1 - *cumLen);
+            memcpy(result + *cumLen, tmp, copy);
+            *cumLen += (int)copy;
+        } else {
+            result[*cumLen] = (char)tok->flag;
+            (*cumLen)++;
+        }
+    }
+    return result;
+}

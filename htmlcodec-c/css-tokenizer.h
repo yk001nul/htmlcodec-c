@@ -117,4 +117,12 @@ typedef struct {
 CSSFreqMap* collectCSSFrequencies(const CSSTokenArray* arr);
 void        freeCSSFreqMap(CSSFreqMap* map);
 
+/**
+ * Reconstruct the original CSS string from a CSSTokenArray.
+ * Uses ruleTokens for type-0, atRuleTokens for type-1, commentTokens for type-2.
+ * Caller must free() the returned buffer.
+ * *cumLen receives the number of bytes written (excluding null terminator).
+ */
+char* detokenizeCSSTokenArray(const CSSTokenArray* arr, int* cumLen);
+
 #endif /* CSS_TOKENIZER_H */

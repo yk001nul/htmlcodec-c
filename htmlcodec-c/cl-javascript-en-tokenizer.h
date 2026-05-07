@@ -26,4 +26,12 @@ typedef struct {
 CLJSTokenArray* tokenizeJavaScript(const char* input);
 void freeCLJSTokenArray(CLJSTokenArray* arr);
 
+/**
+ * Reconstruct the original string from a CLJSTokenArray.
+ * Caller must free() the returned buffer.
+ * *cumLen receives the number of bytes written (excluding null terminator).
+ * Requires patterns to be initialized (call tokenizeJavaScript first).
+ */
+char* detokenizeCLJSTokenArray(const CLJSTokenArray* arr, int* cumLen);
+
 #endif // CL_JAVASCRIPT_EN_TOKENIZER_H

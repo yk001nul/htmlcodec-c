@@ -854,3 +854,52 @@ CSSFreqMap* collectCSSFrequencies(const CSSTokenArray* arr) {
 void freeCSSFreqMap(CSSFreqMap* map) {
     free(map);
 }
+
+char* detokenizeCSSTokenArray(const CSSTokenArray* arr, int* cumLen) {
+    if (!arr || !cumLen) return NULL;
+    /* Pre-count total CSSTokenizables to size the output buffer. */
+    int total_tokenizables = 0;
+    for (int i = 0; i < arr->count; i++) {
+        const CSSToken* tok = &arr->tokens[i];
+        if (tok->type == 0) total_tokenizables += tok->data.rule.ruleTokenSize;
+        else if (tok->type == 1) total_tokenizables += tok->data.atRule.atRuleTokenSize;
+        else if (tok->type == 2) total_tokenizables += tok->data.comment.commentTokenSize;
+    }
+    /* Max CSS pattern: 27 chars ("::-webkit-input-placeholder"). Use 28 per spec. */
+    size_t bufSize = (size_t)total_tokenizables * 28 + 1;
+    char* result = (char*)calloc(bufSize, 1);
+    if (!result) return NULL;
+    *cumLen = 0;
+    for (int i = 0; i < arr->count; i++) {
+        const CSSToken* tok = &arr->tokens[i];
+        const CSSTokenizable* toks = NULL;
+        int toks_count = 0;
+        if (tok->type == 0) {
+            toks = tok->data.rule.ruleTokens;
+            toks_count = tok->data.rule.ruleTokenSize;
+        } else if (tok->type == 1) {
+            toks = tok->data.atRule.atRuleTokens;
+            toks_count = tok->data.atRule.atRuleTokenSize;
+        } else if (tok->type == 2) {
+            toks = tok->data.comment.commentTokens;
+            toks_count = tok->data.comment.commentTokenSize;
+        }
+        for (int j = 0; j < toks_count; j++) {
+            if (*cumLen >= (int)bufSize - 1) break;
+            const CSSTokenizable* ct = &toks[j];
+            if (ct->isPattern) {
+                const char* pattern = CSS_PATTERNS[ct->flag];
+                size_t pLen = strlen(pattern);
+                size_t copy = pLen;
+                if (*cumLen + (int)copy > (int)bufSize - 1)
+                    copy = (size_t)((int)bufSize - 1 - *cumLen);
+                memcpy(result + *cumLen, pattern, copy);
+                *cumLen += (int)copy;
+            } else {
+                result[*cumLen] = (char)ct->flag;
+                (*cumLen)++;
+            }
+        }
+    }
+    return result;
+}

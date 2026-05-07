@@ -136,6 +136,14 @@ int main(void) {
     test_zlib_compare_cljs_ae_opt_short();
     test_zlib_compare_cljs_ae_opt_long();
 
+    printf("\n--- DETOKENIZER TESTS ---\n");
+    test_nl_detokenizer_best_case();
+    test_nl_detokenizer_worst_case();
+    test_cljs_detokenizer_best_case();
+    test_cljs_detokenizer_worst_case();
+    test_css_detokenizer_best_case();
+    test_css_detokenizer_worst_case();
+
     printf("\n--- HTML CODEC TESTS ---\n");
     test_html_codec_codebook_no_duplicates();
     test_html_codec_roundtrip_short();
