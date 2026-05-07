@@ -91,7 +91,7 @@ This is a C17 compression library that tokenizes HTML, CSS, English/Dutch text, 
 
 ### CMake Targets
 
-- **`htmlcodec-c-lib`** — static library: `html-tokenizer.c`, `css-tokenizer.c`, `css-codec.c`, `nl-en-tokenizer.c`, `nl-en-opt.c`, `nl-en-codec.c`, `cl-javascript-en-tokenizer.c`, `cl-javascript-codec.c`, `nl-en-us-hyphenator.c`
+- **`htmlcodec-c-lib`** — static library: `html-tokenizer.c`, `html-codec.c`, `css-tokenizer.c`, `css-codec.c`, `nl-en-tokenizer.c`, `nl-en-opt.c`, `nl-en-codec.c`, `cl-javascript-en-tokenizer.c`, `cl-javascript-codec.c`, `nl-en-us-hyphenator.c`
 - **`htmlcodec-c`** — main executable stub (currently a no-op)
 - **`htmlcodec-c-test`** — test runner (`test-runner.c` + `tokenizer-test.c`)
 
@@ -101,7 +101,8 @@ Each module is a self-contained `.h`/`.c` pair:
 
 | Module | Purpose |
 |--------|---------|
-| `html-tokenizer` | State-machine HTML parser; produces `HTMLTokenArray` with text/openTag/closeTag tokens |
+| `html-tokenizer` | State-machine HTML parser; produces `HTMLTokenArray` with text/openTag/closeTag tokens. `HTMLToken.data.text` carries `content[HTML_MAX_TEXT_CONTENT]` plus `NLTokenArray* textTokenArray` (populated by `enrichHTMLTokenSubdata()` via `tokenizeEnglishOpt()`). `enrichHTMLTokenSubdata()` also parses inline CSS/JS in `<style>`/`<script>` text nodes and `style`/`on*` attributes. |
+| `html-codec` | Structured codec for `HTMLTokenArray`. Uses a 485-entry flat codebook (`HTML_CODEBOOK[]`) — segment 1: 112 standard HTML tag names (indices 0–111), segment 2: 118 HTML attribute names (indices 112–229; names that collide with tag names are replaced with modern attrs: dirname, exportparts, inert, itemscope, part, popover, popovertarget, popovertargetaction), segment 3: 255 common MIME type strings (indices 230–484). A 9-bit flag encodes codebook hits; sentinel FLAG\_RAW=485 signals a raw 6-bit-length + ASCII fallback. Text tokens are encoded via `nl_en_encode_opt()`. Attribute values carrying inline CSS are encoded via `css_encode_opt()`; inline JS via `cljs_encode_ae_opt()`; inline NL via `nl_en_encode_opt()`. Sub-codec payload lengths are stored as 12-bit byte counts. Provides `html_encode_ae_opt()` / `html_decode_ae_opt()` and `html_codebook_init()`. |
 | `css-tokenizer` | CSS parser for selectors, properties, at-rules, and comments. Contains a 1208-entry pattern codebook (`CSS_PATTERNS[]`) across 11 segments: HTML type selectors (0–137), HTML attribute names (138–264), pseudo-classes (265–324), pseudo-elements (325–346), CSS properties (347–678), at-rules (679–697), combinators/symbols (698–707), reserved keyword values (708–923), value functions (924–1029), named colors (1030–1177), named at-rule blocks (1178–1207). `CSSTokenizable` (`isPattern` bool + `unsigned short flag`) represents one matched codebook entry or one raw ASCII character. `CSSProperty` carries `nameTokens[1024]`/`valueTokens[1024]` + sizes for whole-string tokenization of each property name and value. Both the `rule` union member (`selectorTokens[1024]`/`selectorTokenSize`) and the `atRule` union member (`atRuleTokens[1024]`/`atRuleTokenSize`) are populated by the same greedy longest-match left-to-right scan. The `comment` union member carries `commentTokens[1024]`/`commentTokenSize` where each character of the comment text is stored as a raw-ASCII `CSSTokenizable`. The `rule` union member also carries `ruleTokens[1024]`/`ruleTokenSize` — a flat concatenation produced by `css_flatten_rule_tokens()`: selectorTokens + `{` + (for each property: nameTokens + `:` + valueTokens + `;`) + `}`, using ASCII `CSSTokenizable` sentinels at each syntactic boundary. `collectCSSFrequencies()` takes a completed `CSSTokenArray` and returns a heap-allocated `CSSFreqMap` (up to `CSS_MAX_UNIQUE_TOKENIZABLE`=1464 entries) containing one `CSSFreqEntry` per unique `CSSTokenizable`, sorted descending by frequency. `CSS_MAX_TOKENIZABLE`=1024, `CSS_MAX_PROPERTIES`=16, `CSS_MAX_TOKENS`=256, `CSS_MAX_UNIQUE_TOKENIZABLE`=1464. |
 | `css-codec` | Arithmetic-encoding codec for `CSSTokenArray`. `css_encode_ae()` builds a frequency map via `collectCSSFrequencies()`, constructs a fixed-point cumulative probability table (`CSSAESymbol`, scaled to `CSS_AE_SCALE`=65536), then encodes the flat `CSSTokenizable` sequence using renormalized arithmetic coding with E1/E2/E3 bit-emission (WNC-style). Output format: 10-bit total-tokenizable count + 11-bit unique count + per-symbol (22 bits if isPattern, 18 bits if ASCII) + 9-bit CSSToken count + per-token (2-bit type + 10-bit tokenizable size) + variable-length AE bitstream. `css_decode_ae()` reconstructs the frequency table, performs renormalized arithmetic decoding to recover the flat `CSSTokenizable` sequence, then partitions it back into `CSSToken` structs using the per-token sizes and the `{`/`:`/`;`/`}` ASCII sentinels embedded by the flattening step. Lossless for arbitrary-length sequences (no fixed precision limit). Also provides an optimised adaptive codec: `css_encode_opt()` / `css_decode_opt()` implement three-step adaptive AE — Step 1: vocab-only header (no per-symbol frequencies); Step 2: order-1 context model (`count[ctx][sym]`, Laplace-initialised, updated online); Step 3: CSS structural bigram seeding (pre-warms count table with CSS segment membership rules). See Encoding Format section below. |
 | `nl-en-tokenizer` | English/Dutch text tokenizer using a 512-entry pattern dictionary structured as: CV×48, CVC×48, CCV×48, CVCC×48, VC×48, VCC×48, CCC×16, prefixes×48, suffixes×128 (48 base + 80 fill), non-syllable trigraphs×16, digraphs×16. `NLToken.flag` is `unsigned short` (holds indices 0–511). Tokenizes right-to-left (suffix-first) then reverses the token list. `initialize_patterns()` builds `NL_EN_PATTERNS` using a round-robin merge across the 12 sections: each round picks one element per section (by rank within section), sorts the batch by ascending character length, then appends — placing the most-frequent patterns at lower indices for better variable-width compression. `collectNLFrequencies()` takes a completed `NLTokenArray` and returns a heap-allocated `NLFreqMap` containing one `NLFreqEntry` (NLToken copy + frequency count) per unique token (identified by isPattern+flag), sorted descending by frequency; `uniqueCount` ≤ `totalTokens` ≤ `NL_EN_MAX_TOKENS`. |
@@ -267,6 +268,43 @@ Two benchmark tests compare `cljs_encode_ae_opt` output size against zlib on rea
 | Long  | production-like React module (1921 B, 910 tokens) | ~658 B | ~733 B | ~66% |
 
 The short case already beats zlib below 100 bytes. The long case (1921 B, ≥ 1024 B target) achieves **65.7% reduction**, beating zlib's 61.8%. Best case (highly repetitive function calls) achieves **73.2% reduction**. The bitmap vocab header is the key enabler: for vocab\_size=129 it replaces ~1250 per-entry bits with a fixed 758-bit bitmap, saving ~62 bytes on the header alone.
+
+### Encoding Format (HTML AE Opt Codec)
+
+Bit stream structure produced by `html_encode_ae_opt` / decoded by `html_decode_ae_opt` (Steps 1–6):
+
+- 10 bits: token count (`HTMLTokenArray.count`)
+- **[Step 3 — attr-value dictionary]** 5 bits `dict_size` (0–31); per entry: 7 bits `str_len` + `str_len`×8 bits raw chars
+- **[Step 4 — codebook AE]** 12 bits `cb_sym_count` (total tag+attr flag symbols); 9 bits `cb_vocab_size` (unique symbols, max 486); `cb_vocab_size`×9 bits symbol values (0–485); VLC `cb_ae_bytes`; `cb_ae_bytes` bytes: order-1 adaptive AE payload for all tag/attr flag symbols
+- **[Step 1 — global NL stream]** 10 bits `text_tok_count`; `text_tok_count`×10 bits `nl_token_count` boundary table (0 = whitespace-only or subdataType≠NONE); VLC `global_nl_bytes`; `global_nl_bytes` bytes: single `nl_en_encode_opt()` payload merging text tokens with `subdataType=NONE` and non-whitespace content
+- Per token (2-bit type first):
+  - type=0 (text): 2 bits `subdataType`; if >0: VLC `sub_bytes` + `sub_bytes` bytes sub-codec payload
+  - type=1 or 2 (tag/close): *no flag field* (consumed from codebook AE pre-stream); if FLAG\_RAW: 6 bits length + length×8 bits raw ASCII; 1 bit `selfClosing`; 5 bits `attrCount`; per attribute: *no flag field* (from AE stream); if FLAG\_RAW: 6 bits length + length×8 bits; 2 bits attr `subdataType`; if NONE: 1 bit `dict_hit` + (5 bits dict\_index | 7 bits value\_len + value\_len×8 bits raw); if CSS/JS/NL: 7 bits `sub_len` + `sub_len`×8 bits
+
+**Step 1:** Non-whitespace, `subdataType=NONE` text tokens are merged into one `nl_en_encode_opt()` call. A boundary table (one 10-bit entry per text token) records each token's NL count; the decoder slices the merged array accordingly.
+
+**Step 2:** Whitespace-only text tokens contribute 0 to the boundary table and are excluded from the NL merge. Decoded content is empty string.
+
+**Step 3:** Up to 32 most-frequent raw attribute values (by `freq × len` score) are stored in a header dictionary. Each `subdataType=NONE` attribute value writes a 1-bit `dict_hit` flag; hits use a 5-bit index; misses use 7-bit length + raw bytes.
+
+**Step 4:** Tag and attribute codebook flags (values 0–485) are extracted in a first pass, AE-encoded as a self-contained payload using an order-1 adaptive model (Laplace-initialised `count[ctx][sym]` table, `vocab_size+1` rows). The decoder pre-decodes all symbols before the per-token loop; each tag/attr consumes the next pre-decoded symbol rather than reading a 9-bit fixed flag.
+
+**Step 5:** Text tokens with `subdataType≠NONE` are excluded from the global NL merge (their content is redundantly stored in the sub-codec payload). For `subdataType=NL` tokens, the decoder reconstructs `data.text.content` from `nl_tokens_to_string(subdata.nl)`.
+
+**Step 6:** Subdata payload lengths (previously 12-bit fixed) are now VLC-encoded: 8 bits for lengths 0–127, 16 bits for 128–16383. The global NL section length also uses VLC.
+
+Tag and attribute names are lowercased before codebook lookup. Unknown names fall back to FLAG\_RAW with up to 63 raw ASCII chars. Inline CSS/JS attribute values (from `style` / `on*` attributes) are encoded via their respective sub-codecs.
+
+### zlib vs HTML AE Benchmark
+
+Two benchmark tests compare `html_encode_ae_opt` output size against zlib applied to the raw HTML string:
+
+| Case | Raw HTML | HTML AE (Steps 1–6) | zlib | Notes |
+|------|----------|:-------------------:|:----:|-------|
+| Short | 86 B (5 tags, inline CSS) | ~80 B | ~89 B | beats zlib on this input after Steps 4–6 |
+| Long  | 3358 B (235 tokens, full webpage) | ~2028 B (39.6% reduction) | ~1070 B | Steps 1–6 combined save ~1330 B vs baseline ~3470 B (+3.3%) |
+
+Steps 1–6 achieve **39.6% reduction** on the long test document (3358 B → 2028 B). The codec beats zlib on the short input (80 B vs 89 B). Step 4 (codebook AE) contributed the largest additional gain over Steps 1–3 (21.6% → 39.6%) by eliminating ~600 B of fixed 9-bit tag/attr flag overhead. The remaining gap to zlib (~1070 B) reflects structured per-token serialisation overhead; the realistic ceiling for this architecture is ~55–60% on this document.
 
 ### Test Structure
 

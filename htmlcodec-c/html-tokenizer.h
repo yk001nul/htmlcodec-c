@@ -39,6 +39,7 @@ typedef struct {
     union {
         struct {
             char content[HTML_MAX_TEXT_CONTENT];
+            NLTokenArray* textTokenArray;
         } text;
         struct {
             char name[HTML_MAX_TAG_NAME];

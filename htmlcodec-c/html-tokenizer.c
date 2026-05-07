@@ -78,6 +78,7 @@ static void appendTextToken(HTMLTokenArray* result, const char* text, int textLe
         token->type = 0;
         token->subdataType = HTML_SUBDATA_NONE;
         token->subdata.css = NULL;
+        token->data.text.textTokenArray = NULL;
         int copyLen = textLen;
         if (copyLen > HTML_MAX_TEXT_CONTENT - 1) copyLen = HTML_MAX_TEXT_CONTENT - 1;
         strncpy(token->data.text.content, text, copyLen);
@@ -102,6 +103,7 @@ HTMLTokenArray* parseHTML(const char* html) {
             token->type = 0; // text
             token->subdataType = HTML_SUBDATA_NONE;
             token->subdata.css = NULL;
+            token->data.text.textTokenArray = NULL;
             strncpy(token->data.text.content, &html[textStart],
                 textLen < HTML_MAX_TEXT_CONTENT ? textLen : HTML_MAX_TEXT_CONTENT - 1);
             token->data.text.content[textLen < HTML_MAX_TEXT_CONTENT ? textLen : HTML_MAX_TEXT_CONTENT - 1] = '\0';
@@ -195,6 +197,15 @@ static int startsWithOn(const char* name) {
 void enrichHTMLTokenSubdata(HTMLTokenArray* tokens) {
     if (!tokens) return;
 
+    // Populate textTokenArray for all text tokens
+    for (int i = 0; i < tokens->count; i++) {
+        HTMLToken* token = &tokens->tokens[i];
+        if (token->type != 0) continue;
+        if (token->data.text.content[0] != '\0') {
+            token->data.text.textTokenArray = tokenizeEnglishOpt(token->data.text.content);
+        }
+    }
+
     // Text tokens preceding closing tag can be CSS/JS/NL depending on tag name
     for (int i = 0; i < tokens->count; i++) {
         HTMLToken* token = &tokens->tokens[i];
@@ -216,7 +227,7 @@ void enrichHTMLTokenSubdata(HTMLTokenArray* tokens) {
                 token->subdata.js = tokenizeJavaScript(token->data.text.content);
                 token->subdataType = HTML_SUBDATA_JS;
             } else {
-                token->subdata.nl = tokenizeEnglish(token->data.text.content);
+                token->subdata.nl = tokenizeEnglishOpt(token->data.text.content);
                 token->subdataType = HTML_SUBDATA_NL;
             }
         }
@@ -245,6 +256,10 @@ void freeHTMLTokenArray(HTMLTokenArray* arr) {
 
     for (int i = 0; i < arr->count; i++) {
         HTMLToken* token = &arr->tokens[i];
+        if (token->type == 0 && token->data.text.textTokenArray) {
+            freeNLTokenArray(token->data.text.textTokenArray);
+            token->data.text.textTokenArray = NULL;
+        }
         if (token->subdataType == HTML_SUBDATA_CSS && token->subdata.css) {
             freeCSS(token->subdata.css);
             token->subdata.css = NULL;

@@ -39,6 +39,7 @@ endif()
 # Core tokenizer library target (static)
 add_library(htmlcodec-c-lib STATIC
     html-tokenizer.c
+    html-codec.c
     css-tokenizer.c
     css-codec.c
     nl-en-tokenizer.c
