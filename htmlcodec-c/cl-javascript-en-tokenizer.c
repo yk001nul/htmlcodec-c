@@ -212,3 +212,57 @@ CLJSTokenArray* tokenizeJavaScript(const char* input) {
 void freeCLJSTokenArray(CLJSTokenArray* arr) {
     if (arr) free(arr);
 }
+
+char* detokenizeCLJSTokenArray(const CLJSTokenArray* arr, int* cumLen) {
+    if (!arr || !cumLen) return NULL;
+    /* Max CLJS pattern: 28 chars ("document.removeEventListener"). */
+    size_t bufSize = arr->count * 30 + 1;
+    char* result = (char*)calloc(bufSize, 1);
+    if (!result) return NULL;
+    *cumLen = 0;
+    for (size_t i = 0; i < arr->count; i++) {
+        if (*cumLen >= (int)bufSize - 1) break;
+        const CLJSToken* tok = &arr->tokens[i];
+        if (tok->isPattern) {
+            const char* pattern = CL_JS_EN_PATTERNS[tok->flag];
+            size_t pLen = strlen(pattern);
+            char tmp[64];
+            if (pLen > sizeof(tmp) - 1) pLen = sizeof(tmp) - 1;
+            memcpy(tmp, pattern, pLen);
+            tmp[pLen] = '\0';
+            /* Apply case style only for English digraph patterns. */
+            if (CL_JS_EN_PATTERN_IS_DIGRAPH[tok->flag]) {
+                switch (tok->caseStyle) {
+                    case 1:
+                        for (size_t j = 0; j < pLen; j++)
+                            if (isalpha((unsigned char)tmp[j]))
+                                tmp[j] = toupper((unsigned char)tmp[j]);
+                        break;
+                    case 2:
+                        for (size_t j = 0; j < pLen; j++)
+                            if (isalpha((unsigned char)tmp[j]))
+                                tmp[j] = (j == 0) ? toupper((unsigned char)tmp[j])
+                                                  : tolower((unsigned char)tmp[j]);
+                        break;
+                    case 3:
+                        for (size_t j = 0; j < pLen; j++)
+                            if (isalpha((unsigned char)tmp[j]))
+                                tmp[j] = (j == pLen - 1) ? toupper((unsigned char)tmp[j])
+                                                          : tolower((unsigned char)tmp[j]);
+                        break;
+                    default: break; /* case 0: already lowercase */
+                }
+            }
+            /* Non-digraph patterns always use caseStyle=3 (no change). */
+            size_t copy = pLen;
+            if (*cumLen + (int)copy > (int)bufSize - 1)
+                copy = (size_t)((int)bufSize - 1 - *cumLen);
+            memcpy(result + *cumLen, tmp, copy);
+            *cumLen += (int)copy;
+        } else {
+            result[*cumLen] = (char)tok->flag;
+            (*cumLen)++;
+        }
+    }
+    return result;
+}

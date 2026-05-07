@@ -3838,3 +3838,123 @@ void test_zlib_compare_html_codec_long(void) {
     freeHTMLTokenArray(orig);
     printf("PASS zlib vs HTML AE - long HTML document (%zu bytes raw)\n", raw_len);
 }
+
+/* =========================================================================
+   Detokenizer tests (detok.md)
+   ========================================================================= */
+
+void test_nl_detokenizer_best_case(void) {
+    /* "Hello World" exercises pattern matching + caseStyle preservation. */
+    const char* input = "Hello World";
+    NLTokenArray* arr = tokenizeEnglish(input);
+    assert_true(arr != NULL, "NL detok best: tokenize not NULL");
+    assert_true(arr->count > 0, "NL detok best: at least one token");
+
+    int cumLen = 0;
+    char* output = detokenizeNLTokenArray(arr, &cumLen);
+    assert_true(output != NULL, "NL detok best: output not NULL");
+    assert_equal_int(cumLen, (int)strlen(input), "NL detok best: cumLen equals input length");
+    assert_equal_str(output, input, "NL detok best: round-trip matches input");
+
+    free(output);
+    freeNLTokenArray(arr);
+    printf("PASS NL detokenizer best case\n");
+}
+
+void test_nl_detokenizer_worst_case(void) {
+    /* Non-alphanumeric chars produce one ASCII token per character. */
+    const char* input = "!!!!????~~~~";
+    NLTokenArray* arr = tokenizeEnglish(input);
+    assert_true(arr != NULL, "NL detok worst: tokenize not NULL");
+    assert_equal_int((int)arr->count, (int)strlen(input),
+                     "NL detok worst: one token per char");
+
+    int cumLen = 0;
+    char* output = detokenizeNLTokenArray(arr, &cumLen);
+    assert_true(output != NULL, "NL detok worst: output not NULL");
+    assert_equal_int(cumLen, (int)strlen(input), "NL detok worst: cumLen equals input length");
+    assert_equal_str(output, input, "NL detok worst: round-trip matches input");
+
+    free(output);
+    freeNLTokenArray(arr);
+    printf("PASS NL detokenizer worst case\n");
+}
+
+void test_cljs_detokenizer_best_case(void) {
+    /* JS keywords and operators produce pattern tokens — best compression case. */
+    const char* input = "function add(a, b) { return a + b; }";
+    CLJSTokenArray* arr = tokenizeJavaScript(input);
+    assert_true(arr != NULL, "CLJS detok best: tokenize not NULL");
+    assert_true(arr->count > 0, "CLJS detok best: at least one token");
+    assert_true(arr->count < (int)strlen(input),
+                "CLJS detok best: fewer tokens than chars (patterns matched)");
+
+    int cumLen = 0;
+    char* output = detokenizeCLJSTokenArray(arr, &cumLen);
+    assert_true(output != NULL, "CLJS detok best: output not NULL");
+    assert_equal_int(cumLen, (int)strlen(input), "CLJS detok best: cumLen equals input length");
+    assert_equal_str(output, input, "CLJS detok best: round-trip matches input");
+
+    free(output);
+    freeCLJSTokenArray(arr);
+    printf("PASS CLJS detokenizer best case\n");
+}
+
+void test_cljs_detokenizer_worst_case(void) {
+    /* Characters that match no CLJS pattern produce one ASCII token each. */
+    const char* input = "xyz";
+    CLJSTokenArray* arr = tokenizeJavaScript(input);
+    assert_true(arr != NULL, "CLJS detok worst: tokenize not NULL");
+    assert_equal_int((int)arr->count, (int)strlen(input),
+                     "CLJS detok worst: one token per char");
+
+    int cumLen = 0;
+    char* output = detokenizeCLJSTokenArray(arr, &cumLen);
+    assert_true(output != NULL, "CLJS detok worst: output not NULL");
+    assert_equal_int(cumLen, (int)strlen(input), "CLJS detok worst: cumLen equals input length");
+    assert_equal_str(output, input, "CLJS detok worst: round-trip matches input");
+
+    free(output);
+    freeCLJSTokenArray(arr);
+    printf("PASS CLJS detokenizer worst case\n");
+}
+
+void test_css_detokenizer_best_case(void) {
+    /* Selector rule — selector and property tokens from codebook. */
+    const char* input = "body{color:red;}";
+    CSSTokenArray* arr = parseCSS(input);
+    assert_true(arr != NULL, "CSS detok best: parseCSS not NULL");
+    assert_equal_int(arr->count, 1, "CSS detok best: 1 CSSToken");
+    assert_equal_int(arr->tokens[0].type, 0, "CSS detok best: type=0 selector rule");
+    assert_true(arr->tokens[0].data.rule.ruleTokenSize > 0,
+                "CSS detok best: ruleTokenSize > 0");
+
+    int cumLen = 0;
+    char* output = detokenizeCSSTokenArray(arr, &cumLen);
+    assert_true(output != NULL, "CSS detok best: output not NULL");
+    assert_equal_int(cumLen, (int)strlen(input), "CSS detok best: cumLen equals input length");
+    assert_equal_str(output, input, "CSS detok best: round-trip matches input");
+
+    free(output);
+    freeCSS(arr);
+    printf("PASS CSS detokenizer best case\n");
+}
+
+void test_css_detokenizer_worst_case(void) {
+    /* Comment tokens store every character as raw ASCII — worst case for patterns. */
+    const char* input = "/* abc */";
+    CSSTokenArray* arr = parseCSS(input);
+    assert_true(arr != NULL, "CSS detok worst: parseCSS not NULL");
+    assert_equal_int(arr->count, 1, "CSS detok worst: 1 CSSToken");
+    assert_equal_int(arr->tokens[0].type, 2, "CSS detok worst: type=2 comment");
+
+    int cumLen = 0;
+    char* output = detokenizeCSSTokenArray(arr, &cumLen);
+    assert_true(output != NULL, "CSS detok worst: output not NULL");
+    assert_equal_int(cumLen, (int)strlen(input), "CSS detok worst: cumLen equals input length");
+    assert_equal_str(output, input, "CSS detok worst: round-trip matches input");
+
+    free(output);
+    freeCSS(arr);
+    printf("PASS CSS detokenizer worst case\n");
+}
