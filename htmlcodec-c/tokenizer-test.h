@@ -178,6 +178,10 @@ void test_cljs_detokenizer_worst_case();
 void test_css_detokenizer_best_case();
 void test_css_detokenizer_worst_case();
 
+// HTML detokenizer tests (htmldetok.md)
+void test_html_detokenizer_best_case();
+void test_html_detokenizer_worst_case();
+
 // HTML codec tests (Requirement 6)
 void test_html_codec_codebook_no_duplicates();
 void test_html_codec_roundtrip_short();
