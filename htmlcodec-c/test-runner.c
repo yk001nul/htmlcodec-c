@@ -158,6 +158,31 @@ int main(void) {
     test_zlib_compare_html_codec_short();
     test_zlib_compare_html_codec_long();
 
+    printf("\n--- COMMAND-LINE ARGUMENT PARSE TESTS ---\n");
+    test_cmdline_parse_text_only();
+    test_cmdline_parse_file_flag();
+    test_cmdline_parse_decode_flag();
+    test_cmdline_parse_format_html();
+    test_cmdline_parse_format_css();
+    test_cmdline_parse_format_js();
+    test_cmdline_parse_format_en_explicit();
+    test_cmdline_parse_ascii_flag();
+    test_cmdline_parse_outputpath();
+    test_cmdline_parse_combined_all_flags();
+    test_cmdline_parse_no_args();
+    test_cmdline_parse_missing_format_arg();
+    test_cmdline_parse_invalid_format();
+
+    printf("\n--- COMMAND-LINE ARGUMENT PROCESS TESTS ---\n");
+    test_cmdline_process_en_encode_decode();
+    test_cmdline_process_html_encode_decode();
+    test_cmdline_process_css_encode_decode();
+    test_cmdline_process_js_encode_decode();
+    test_cmdline_process_file_input_en();
+    test_cmdline_process_file_input_css();
+    test_cmdline_process_file_input_js();
+    test_cmdline_process_file_input_html();
+
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
 

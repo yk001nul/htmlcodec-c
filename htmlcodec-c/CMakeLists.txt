@@ -48,6 +48,7 @@ add_library(htmlcodec-c-lib STATIC
     cl-javascript-en-tokenizer.c
     cl-javascript-codec.c
     nl-en-us-hyphenator.c
+    cmdline.c
 )
 
 target_include_directories(htmlcodec-c-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
