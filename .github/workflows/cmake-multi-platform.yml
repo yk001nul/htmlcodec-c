@@ -45,8 +45,8 @@ jobs:
       id: strings
       shell: bash
       run: |
-        echo "build-output-dir=${{ github.workspace }}/out/build/${{ matrix.cmake_preset }}" >> "$GITHUB_OUTPUT"
-        echo "install-dir=${{ github.workspace }}/out/install" >> "$GITHUB_OUTPUT"
+        echo "build-output-dir=${{ github.workspace }}/htmlcodec-c/out/build/${{ matrix.cmake_preset }}" >> "$GITHUB_OUTPUT"
+        echo "install-dir=${{ github.workspace }}/htmlcodec-c/out/install" >> "$GITHUB_OUTPUT"
 
     - name: Install dependencies (Linux)
       if: runner.os == 'Linux'
