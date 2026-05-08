@@ -1,5 +1,6 @@
 /* nl-en-tokenizer v2 */
 #include "nl-en-tokenizer.h"
+#include <stdint.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
