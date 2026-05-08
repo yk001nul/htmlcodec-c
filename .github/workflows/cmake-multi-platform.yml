@@ -105,13 +105,35 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
 
+    - name: List downloaded structure
+      shell: bash
+      run: |
+        echo "=== Directory structure ==="
+        find . -type f \( -name "*.exe" -o -name "*.dll" -o -name "*.lib" -o -name "*.so" -o -name "htmlcodec-c" \) | sort
+        echo "=== All files in artifacts ==="
+        ls -lR htmlcodec-c-windows-x64 htmlcodec-c-linux-x64 2>/dev/null || true
+
+    - name: Create release directory structure
+      shell: bash
+      run: |
+        mkdir -p release-files
+        # Copy Windows artifacts
+        if [ -d htmlcodec-c-windows-x64 ]; then
+          cp -r htmlcodec-c-windows-x64/* release-files/ 2>/dev/null || true
+        fi
+        # Copy Linux artifacts
+        if [ -d htmlcodec-c-linux-x64 ]; then
+          cp -r htmlcodec-c-linux-x64/* release-files/ 2>/dev/null || true
+        fi
+        echo "=== Files ready for release ==="
+        find release-files -type f | sort
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          htmlcodec-c-windows-x64/*
-          htmlcodec-c-linux-x64/*
+        files: release-files/**/*
         draft: false
+        generate_release_notes: true
         prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
