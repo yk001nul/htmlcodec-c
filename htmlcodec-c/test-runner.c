@@ -143,6 +143,8 @@ int main(void) {
     test_cljs_detokenizer_worst_case();
     test_css_detokenizer_best_case();
     test_css_detokenizer_worst_case();
+    test_html_detokenizer_best_case();
+    test_html_detokenizer_worst_case();
 
     printf("\n--- HTML CODEC TESTS ---\n");
     test_html_codec_codebook_no_duplicates();

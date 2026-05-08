@@ -3958,3 +3958,43 @@ void test_css_detokenizer_worst_case(void) {
     freeCSS(arr);
     printf("PASS CSS detokenizer worst case\n");
 }
+
+void test_html_detokenizer_best_case(void) {
+    /* Simple open/text/close tag: exercises all three token types with no subdata. */
+    const char* input = "<p>Hello</p>";
+    HTMLTokenArray* arr = parseHTML(input);
+    assert_true(arr != NULL, "HTML detok best: parseHTML not NULL");
+    assert_equal_int(arr->count, 3, "HTML detok best: 3 tokens");
+    assert_equal_int(arr->tokens[0].type, 1, "HTML detok best: token[0] is open tag");
+    assert_equal_int(arr->tokens[1].type, 0, "HTML detok best: token[1] is text");
+    assert_equal_int(arr->tokens[2].type, 2, "HTML detok best: token[2] is close tag");
+
+    int cumLen = 0;
+    char* output = detokenizeHTMLTokenArray(arr, &cumLen);
+    assert_true(output != NULL, "HTML detok best: output not NULL");
+    assert_equal_int(cumLen, (int)strlen(input), "HTML detok best: cumLen equals input length");
+    assert_equal_str(output, input, "HTML detok best: round-trip matches input");
+
+    free(output);
+    freeHTMLTokenArray(arr);
+    printf("PASS HTML detokenizer best case\n");
+}
+
+void test_html_detokenizer_worst_case(void) {
+    /* Nested tags with multiple attributes on each open tag: exercises attribute
+       serialization and NL detokenization for the enclosed text. */
+    const char* input = "<div class=\"main\"><span id=\"x\">world</span></div>";
+    HTMLTokenArray* arr = parseHTML(input);
+    assert_true(arr != NULL, "HTML detok worst: parseHTML not NULL");
+    assert_equal_int(arr->count, 5, "HTML detok worst: 5 tokens");
+
+    int cumLen = 0;
+    char* output = detokenizeHTMLTokenArray(arr, &cumLen);
+    assert_true(output != NULL, "HTML detok worst: output not NULL");
+    assert_equal_int(cumLen, (int)strlen(input), "HTML detok worst: cumLen equals input length");
+    assert_equal_str(output, input, "HTML detok worst: round-trip matches input");
+
+    free(output);
+    freeHTMLTokenArray(arr);
+    printf("PASS HTML detokenizer worst case\n");
+}

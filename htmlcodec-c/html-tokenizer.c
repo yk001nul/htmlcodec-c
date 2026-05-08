@@ -251,6 +251,138 @@ void enrichHTMLTokenSubdata(HTMLTokenArray* tokens) {
     }
 }
 
+char* detokenizeHTMLTokenArray(const HTMLTokenArray* arr, int* cumLen) {
+    if (!arr || !cumLen) return NULL;
+    /* Per token: text up to HTML_MAX_TEXT_CONTENT, or tag with all attrs at max size. */
+    size_t bufSize = (size_t)arr->count *
+        (HTML_MAX_TEXT_CONTENT + HTML_MAX_TAG_NAME +
+         (size_t)HTML_MAX_ATTR_COUNT * (HTML_MAX_ATTR_NAME + HTML_MAX_ATTR_VALUE + 8) + 8) + 1;
+    char* result = (char*)calloc(bufSize, 1);
+    if (!result) return NULL;
+    *cumLen = 0;
+
+    for (int i = 0; i < arr->count; i++) {
+        if (*cumLen >= (int)bufSize - 1) break;
+        const HTMLToken* token = &arr->tokens[i];
+
+        if (token->type == 0) {
+            /* Text token: reconstruct via NL detokenizer. */
+            if (token->data.text.textTokenArray != NULL &&
+                token->data.text.textTokenArray->count > 0) {
+                int nlLen = 0;
+                char* nlStr = detokenizeNLTokenArray(token->data.text.textTokenArray, &nlLen);
+                if (nlStr) {
+                    size_t copy = (size_t)nlLen;
+                    if (*cumLen + (int)copy > (int)bufSize - 1)
+                        copy = (size_t)((int)bufSize - 1 - *cumLen);
+                    memcpy(result + *cumLen, nlStr, copy);
+                    *cumLen += (int)copy;
+                    free(nlStr);
+                }
+            } else if (token->data.text.content[0] != '\0') {
+                /* Fallback: textTokenArray absent, use raw content. */
+                size_t contentLen = strlen(token->data.text.content);
+                size_t copy = contentLen;
+                if (*cumLen + (int)copy > (int)bufSize - 1)
+                    copy = (size_t)((int)bufSize - 1 - *cumLen);
+                memcpy(result + *cumLen, token->data.text.content, copy);
+                *cumLen += (int)copy;
+            }
+        } else if (token->type == 1) {
+            /* Open tag: <name attr1="val1" attr2="val2"> or <name/> */
+            if (*cumLen < (int)bufSize - 1) result[(*cumLen)++] = '<';
+
+            {
+                const char* name = token->data.tag.name;
+                size_t nameLen = strlen(name);
+                size_t copy = nameLen;
+                if (*cumLen + (int)copy > (int)bufSize - 1)
+                    copy = (size_t)((int)bufSize - 1 - *cumLen);
+                memcpy(result + *cumLen, name, copy);
+                *cumLen += (int)copy;
+            }
+
+            for (int a = 0; a < token->data.tag.attrCount; a++) {
+                const HTMLAttribute* attr = &token->data.tag.attributes[a];
+
+                if (*cumLen < (int)bufSize - 1) result[(*cumLen)++] = ' ';
+
+                {
+                    size_t attrNameLen = strlen(attr->name);
+                    size_t copy = attrNameLen;
+                    if (*cumLen + (int)copy > (int)bufSize - 1)
+                        copy = (size_t)((int)bufSize - 1 - *cumLen);
+                    memcpy(result + *cumLen, attr->name, copy);
+                    *cumLen += (int)copy;
+                }
+
+                if (*cumLen < (int)bufSize - 1) result[(*cumLen)++] = '=';
+                if (*cumLen < (int)bufSize - 1) result[(*cumLen)++] = '"';
+
+                if (attr->subdataType == HTML_SUBDATA_CSS && attr->subdata.css) {
+                    int cssLen = 0;
+                    char* cssStr = detokenizeCSSTokenArray(attr->subdata.css, &cssLen);
+                    if (cssStr) {
+                        size_t copy = (size_t)cssLen;
+                        if (*cumLen + (int)copy > (int)bufSize - 1)
+                            copy = (size_t)((int)bufSize - 1 - *cumLen);
+                        memcpy(result + *cumLen, cssStr, copy);
+                        *cumLen += (int)copy;
+                        free(cssStr);
+                    }
+                } else if (attr->subdataType == HTML_SUBDATA_JS && attr->subdata.js) {
+                    int jsLen = 0;
+                    char* jsStr = detokenizeCLJSTokenArray(attr->subdata.js, &jsLen);
+                    if (jsStr) {
+                        size_t copy = (size_t)jsLen;
+                        if (*cumLen + (int)copy > (int)bufSize - 1)
+                            copy = (size_t)((int)bufSize - 1 - *cumLen);
+                        memcpy(result + *cumLen, jsStr, copy);
+                        *cumLen += (int)copy;
+                        free(jsStr);
+                    }
+                } else {
+                    /* NONE or NL attribute: use raw stored value. */
+                    size_t valLen = strlen(attr->value);
+                    size_t copy = valLen;
+                    if (*cumLen + (int)copy > (int)bufSize - 1)
+                        copy = (size_t)((int)bufSize - 1 - *cumLen);
+                    memcpy(result + *cumLen, attr->value, copy);
+                    *cumLen += (int)copy;
+                }
+
+                if (*cumLen < (int)bufSize - 1) result[(*cumLen)++] = '"';
+            }
+
+            if (token->data.tag.selfClosing) {
+                if (*cumLen < (int)bufSize - 1) result[(*cumLen)++] = '/';
+                if (*cumLen < (int)bufSize - 1) result[(*cumLen)++] = '>';
+            } else {
+                if (*cumLen < (int)bufSize - 1) result[(*cumLen)++] = '>';
+            }
+        } else if (token->type == 2) {
+            /* Close tag: </name> */
+            if (*cumLen < (int)bufSize - 1) result[(*cumLen)++] = '<';
+            if (*cumLen < (int)bufSize - 1) result[(*cumLen)++] = '/';
+
+            {
+                const char* name = token->data.tag.name;
+                size_t nameLen = strlen(name);
+                size_t copy = nameLen;
+                if (*cumLen + (int)copy > (int)bufSize - 1)
+                    copy = (size_t)((int)bufSize - 1 - *cumLen);
+                memcpy(result + *cumLen, name, copy);
+                *cumLen += (int)copy;
+            }
+
+            if (*cumLen < (int)bufSize - 1) result[(*cumLen)++] = '>';
+        }
+    }
+
+    result[*cumLen] = '\0';
+    return result;
+}
+
 void freeHTMLTokenArray(HTMLTokenArray* arr) {
     if (!arr) return;
 
