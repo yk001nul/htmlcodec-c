@@ -1,4 +1,4 @@
-# CMakeList.txt : CMake project for htmlcodec-c, include source and define
+﻿# CMakeList.txt : CMake project for htmlcodec-c, include source and define
 # project specific logic here.
 #
 cmake_minimum_required(VERSION 3.21)
@@ -61,11 +61,63 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
         -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare)
 endif()
 
+# Shared library target (DLL/SO)
+add_library(htmlcodec-c-shared SHARED
+    html-tokenizer.c
+    html-codec.c
+    css-tokenizer.c
+    css-codec.c
+    nl-en-tokenizer.c
+    nl-en-opt.c
+    nl-en-codec.c
+    cl-javascript-en-tokenizer.c
+    cl-javascript-codec.c
+    nl-en-us-hyphenator.c
+    cmdline.c
+)
+
+target_include_directories(htmlcodec-c-shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Platform-specific compiler diagnostics for shared library
+if(MSVC)
+    target_compile_options(htmlcodec-c-shared PRIVATE /W3)
+    set_target_properties(htmlcodec-c-shared PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+elseif(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    target_compile_options(htmlcodec-c-shared PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare)
+    set_target_properties(htmlcodec-c-shared PROPERTIES 
+        C_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON)
+endif()
+
+# Install targets for shared library
+install(TARGETS htmlcodec-c-shared
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+    ARCHIVE DESTINATION lib)
+
+install(FILES 
+    htmlcodec-c.h
+    cmdline.h
+    html-codec.h
+    html-tokenizer.h
+    css-codec.h
+    css-tokenizer.h
+    nl-en-codec.h
+    nl-en-tokenizer.h
+    cl-javascript-codec.h
+    cl-javascript-en-tokenizer.h
+    nl-en-us-hyphenator.h
+    DESTINATION include)
+
 # Main runtime executable (non-test)
 add_executable(htmlcodec-c
     htmlcodec-c.c
 )
 target_link_libraries(htmlcodec-c PRIVATE htmlcodec-c-lib)
+
+# Install executable
+install(TARGETS htmlcodec-c DESTINATION bin)
 
 # Test executable
 add_executable(htmlcodec-c-test
