@@ -3998,3 +3998,470 @@ void test_html_detokenizer_worst_case(void) {
     freeHTMLTokenArray(arr);
     printf("PASS HTML detokenizer worst case\n");
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Command-line argument tests (cmdlinearg.md)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+static char* bytes_to_hex_str(const unsigned char* data, size_t len) {
+    char* hex = (char*)malloc(len * 2 + 1);
+    if (!hex) return NULL;
+    for (size_t i = 0; i < len; i++)
+        sprintf(hex + i * 2, "%02x", data[i]);
+    hex[len * 2] = '\0';
+    return hex;
+}
+
+/* ── Parse tests ──────────────────────────────────────────────────────────── */
+
+void test_cmdline_parse_text_only(void) {
+    char prog[] = "prog";
+    char text[] = "hello";
+    char* argv[] = {prog, text};
+    CmdlineOpts opts;
+    int r = parse_cmdline_opts(2, argv, &opts);
+    assert_equal_int(r, 0,             "parse text only: returns 0");
+    assert_true(opts.text != NULL,     "parse text only: text set");
+    assert_equal_str(opts.text, "hello", "parse text only: text matches");
+    assert_equal_int(opts.file_flag,   0,    "parse text only: file_flag 0");
+    assert_equal_int(opts.decode_flag, 0,    "parse text only: decode_flag 0");
+    assert_equal_str(opts.format, "EN",      "parse text only: format defaults EN");
+    assert_equal_int(opts.ascii_flag,  0,    "parse text only: ascii_flag 0");
+    assert_true(opts.outputpath == NULL,     "parse text only: outputpath NULL");
+    printf("PASS cmdline parse: text only\n");
+}
+
+void test_cmdline_parse_file_flag(void) {
+    char prog[] = "prog";
+    char text[] = "myfile.txt";
+    char flag[] = "-f";
+    char* argv[] = {prog, text, flag};
+    CmdlineOpts opts;
+    int r = parse_cmdline_opts(3, argv, &opts);
+    assert_equal_int(r, 0,                       "parse -f: returns 0");
+    assert_equal_int(opts.file_flag, 1,           "parse -f: file_flag 1");
+    assert_equal_str(opts.text, "myfile.txt",     "parse -f: text is filepath");
+    assert_equal_int(opts.decode_flag, 0,         "parse -f: decode_flag still 0");
+    printf("PASS cmdline parse: -f flag\n");
+}
+
+void test_cmdline_parse_decode_flag(void) {
+    char prog[] = "prog";
+    char text[] = "4865";
+    char flag[] = "-d";
+    char* argv[] = {prog, text, flag};
+    CmdlineOpts opts;
+    int r = parse_cmdline_opts(3, argv, &opts);
+    assert_equal_int(r, 0,              "parse -d: returns 0");
+    assert_equal_int(opts.decode_flag, 1, "parse -d: decode_flag 1");
+    assert_equal_int(opts.file_flag, 0,   "parse -d: file_flag still 0");
+    printf("PASS cmdline parse: -d flag\n");
+}
+
+void test_cmdline_parse_format_html(void) {
+    char prog[] = "prog";
+    char text[] = "<p>hi</p>";
+    char lf[]   = "-l";
+    char fmt[]  = "HTML";
+    char* argv[] = {prog, text, lf, fmt};
+    CmdlineOpts opts;
+    int r = parse_cmdline_opts(4, argv, &opts);
+    assert_equal_int(r, 0,                  "parse -l HTML: returns 0");
+    assert_equal_str(opts.format, "HTML",   "parse -l HTML: format is HTML");
+    printf("PASS cmdline parse: -l HTML\n");
+}
+
+void test_cmdline_parse_format_css(void) {
+    char prog[] = "prog";
+    char text[] = "body{}";
+    char lf[]   = "-l";
+    char fmt[]  = "CSS";
+    char* argv[] = {prog, text, lf, fmt};
+    CmdlineOpts opts;
+    int r = parse_cmdline_opts(4, argv, &opts);
+    assert_equal_int(r, 0,                "parse -l CSS: returns 0");
+    assert_equal_str(opts.format, "CSS",  "parse -l CSS: format is CSS");
+    printf("PASS cmdline parse: -l CSS\n");
+}
+
+void test_cmdline_parse_format_js(void) {
+    char prog[] = "prog";
+    char text[] = "var x=1;";
+    char lf[]   = "-l";
+    char fmt[]  = "JS";
+    char* argv[] = {prog, text, lf, fmt};
+    CmdlineOpts opts;
+    int r = parse_cmdline_opts(4, argv, &opts);
+    assert_equal_int(r, 0,              "parse -l JS: returns 0");
+    assert_equal_str(opts.format, "JS", "parse -l JS: format is JS");
+    printf("PASS cmdline parse: -l JS\n");
+}
+
+void test_cmdline_parse_format_en_explicit(void) {
+    char prog[] = "prog";
+    char text[] = "hello";
+    char lf[]   = "-l";
+    char fmt[]  = "EN";
+    char* argv[] = {prog, text, lf, fmt};
+    CmdlineOpts opts;
+    int r = parse_cmdline_opts(4, argv, &opts);
+    assert_equal_int(r, 0,              "parse -l EN: returns 0");
+    assert_equal_str(opts.format, "EN", "parse -l EN: format is EN");
+    printf("PASS cmdline parse: -l EN (explicit)\n");
+}
+
+void test_cmdline_parse_ascii_flag(void) {
+    char prog[] = "prog";
+    char text[] = "hello";
+    char flag[] = "-a";
+    char* argv[] = {prog, text, flag};
+    CmdlineOpts opts;
+    int r = parse_cmdline_opts(3, argv, &opts);
+    assert_equal_int(r, 0,               "parse -a: returns 0");
+    assert_equal_int(opts.ascii_flag, 1, "parse -a: ascii_flag 1");
+    printf("PASS cmdline parse: -a flag\n");
+}
+
+void test_cmdline_parse_outputpath(void) {
+    char prog[] = "prog";
+    char text[] = "hello";
+    char out[]  = "output.bin";
+    char* argv[] = {prog, text, out};
+    CmdlineOpts opts;
+    int r = parse_cmdline_opts(3, argv, &opts);
+    assert_equal_int(r, 0,                          "parse outputpath: returns 0");
+    assert_equal_str(opts.text, "hello",             "parse outputpath: text correct");
+    assert_true(opts.outputpath != NULL,             "parse outputpath: outputpath set");
+    assert_equal_str(opts.outputpath, "output.bin",  "parse outputpath: outputpath correct");
+    printf("PASS cmdline parse: outputpath\n");
+}
+
+void test_cmdline_parse_combined_all_flags(void) {
+    char prog[] = "prog";
+    char text[] = "input.html";
+    char ff[]   = "-f";
+    char df[]   = "-d";
+    char lf[]   = "-l";
+    char fmt[]  = "HTML";
+    char af[]   = "-a";
+    char out[]  = "output.bin";
+    char* argv[] = {prog, text, ff, df, lf, fmt, af, out};
+    CmdlineOpts opts;
+    int r = parse_cmdline_opts(8, argv, &opts);
+    assert_equal_int(r, 0,                          "parse combined: returns 0");
+    assert_equal_str(opts.text, "input.html",        "parse combined: text correct");
+    assert_equal_int(opts.file_flag, 1,              "parse combined: file_flag 1");
+    assert_equal_int(opts.decode_flag, 1,            "parse combined: decode_flag 1");
+    assert_equal_str(opts.format, "HTML",            "parse combined: format HTML");
+    assert_equal_int(opts.ascii_flag, 1,             "parse combined: ascii_flag 1");
+    assert_true(opts.outputpath != NULL,             "parse combined: outputpath set");
+    assert_equal_str(opts.outputpath, "output.bin",  "parse combined: outputpath correct");
+    printf("PASS cmdline parse: combined all flags\n");
+}
+
+void test_cmdline_parse_no_args(void) {
+    char prog[] = "prog";
+    char* argv[] = {prog};
+    CmdlineOpts opts;
+    int r = parse_cmdline_opts(1, argv, &opts);
+    assert_true(r != 0, "parse no args: returns error");
+    printf("PASS cmdline parse: no args returns error\n");
+}
+
+void test_cmdline_parse_missing_format_arg(void) {
+    char prog[] = "prog";
+    char text[] = "hello";
+    char lf[]   = "-l";
+    char* argv[] = {prog, text, lf};
+    CmdlineOpts opts;
+    int r = parse_cmdline_opts(3, argv, &opts);
+    assert_true(r != 0, "parse missing format: returns error");
+    printf("PASS cmdline parse: missing format arg after -l\n");
+}
+
+void test_cmdline_parse_invalid_format(void) {
+    char prog[] = "prog";
+    char text[] = "hello";
+    char lf[]   = "-l";
+    char fmt[]  = "INVALID";
+    char* argv[] = {prog, text, lf, fmt};
+    CmdlineOpts opts;
+    int r = parse_cmdline_opts(4, argv, &opts);
+    assert_true(r != 0, "parse invalid format: returns error");
+    printf("PASS cmdline parse: invalid format returns error\n");
+}
+
+/* ── Process tests (encode/decode round-trips) ────────────────────────────── */
+
+void test_cmdline_process_en_encode_decode(void) {
+    const char* text = "Hello world";
+    char prog[] = "prog";
+    char text_buf[] = "Hello world";
+    char lf[] = "-l";
+    char fmt[] = "EN";
+    char* enc_argv[] = {prog, text_buf, lf, fmt};
+    CmdlineOpts enc_opts;
+    assert_true(parse_cmdline_opts(4, enc_argv, &enc_opts) == 0,
+                "EN process: encode parse ok");
+
+    unsigned char* encoded = NULL;
+    size_t enc_len = 0;
+    assert_true(process_opts(&enc_opts, &encoded, &enc_len) == 0,
+                "EN process: encode ok");
+    assert_true(encoded != NULL && enc_len > 0, "EN process: encoded not empty");
+    if (!encoded) return;
+
+    char* hex = bytes_to_hex_str(encoded, enc_len);
+    free(encoded);
+    assert_true(hex != NULL, "EN process: hex conversion ok");
+    if (!hex) return;
+
+    char df[] = "-d";
+    char* dec_argv[] = {prog, hex, lf, fmt, df};
+    CmdlineOpts dec_opts;
+    assert_true(parse_cmdline_opts(5, dec_argv, &dec_opts) == 0,
+                "EN process: decode parse ok");
+
+    unsigned char* decoded = NULL;
+    size_t dec_len = 0;
+    assert_true(process_opts(&dec_opts, &decoded, &dec_len) == 0,
+                "EN process: decode ok");
+    assert_true(decoded != NULL, "EN process: decoded not NULL");
+    if (decoded) {
+        assert_equal_str((char*)decoded, text, "EN process: round-trip matches");
+        free(decoded);
+    }
+    free(hex);
+    printf("PASS cmdline process: EN encode/decode round-trip\n");
+}
+
+void test_cmdline_process_html_encode_decode(void) {
+    const char* html = "<p>Hello</p>";
+    char prog[] = "prog";
+    char text_buf[] = "<p>Hello</p>";
+    char lf[] = "-l";
+    char fmt[] = "HTML";
+    char* enc_argv[] = {prog, text_buf, lf, fmt};
+    CmdlineOpts enc_opts;
+    assert_true(parse_cmdline_opts(4, enc_argv, &enc_opts) == 0,
+                "HTML process: encode parse ok");
+
+    unsigned char* encoded = NULL;
+    size_t enc_len = 0;
+    assert_true(process_opts(&enc_opts, &encoded, &enc_len) == 0,
+                "HTML process: encode ok");
+    assert_true(encoded != NULL && enc_len > 0, "HTML process: encoded not empty");
+    if (!encoded) return;
+
+    char* hex = bytes_to_hex_str(encoded, enc_len);
+    free(encoded);
+    assert_true(hex != NULL, "HTML process: hex conversion ok");
+    if (!hex) return;
+
+    char df[] = "-d";
+    char* dec_argv[] = {prog, hex, lf, fmt, df};
+    CmdlineOpts dec_opts;
+    assert_true(parse_cmdline_opts(5, dec_argv, &dec_opts) == 0,
+                "HTML process: decode parse ok");
+
+    unsigned char* decoded = NULL;
+    size_t dec_len = 0;
+    assert_true(process_opts(&dec_opts, &decoded, &dec_len) == 0,
+                "HTML process: decode ok");
+    assert_true(decoded != NULL, "HTML process: decoded not NULL");
+    if (decoded) {
+        assert_equal_str((char*)decoded, html, "HTML process: round-trip matches");
+        free(decoded);
+    }
+    free(hex);
+    printf("PASS cmdline process: HTML encode/decode round-trip\n");
+}
+
+void test_cmdline_process_css_encode_decode(void) {
+    const char* css = "body{color:red;}";
+    char prog[] = "prog";
+    char text_buf[] = "body{color:red;}";
+    char lf[] = "-l";
+    char fmt[] = "CSS";
+    char* enc_argv[] = {prog, text_buf, lf, fmt};
+    CmdlineOpts enc_opts;
+    assert_true(parse_cmdline_opts(4, enc_argv, &enc_opts) == 0,
+                "CSS process: encode parse ok");
+
+    unsigned char* encoded = NULL;
+    size_t enc_len = 0;
+    assert_true(process_opts(&enc_opts, &encoded, &enc_len) == 0,
+                "CSS process: encode ok");
+    assert_true(encoded != NULL && enc_len > 0, "CSS process: encoded not empty");
+    if (!encoded) return;
+
+    char* hex = bytes_to_hex_str(encoded, enc_len);
+    free(encoded);
+    assert_true(hex != NULL, "CSS process: hex conversion ok");
+    if (!hex) return;
+
+    char df[] = "-d";
+    char* dec_argv[] = {prog, hex, lf, fmt, df};
+    CmdlineOpts dec_opts;
+    assert_true(parse_cmdline_opts(5, dec_argv, &dec_opts) == 0,
+                "CSS process: decode parse ok");
+
+    unsigned char* decoded = NULL;
+    size_t dec_len = 0;
+    assert_true(process_opts(&dec_opts, &decoded, &dec_len) == 0,
+                "CSS process: decode ok");
+    assert_true(decoded != NULL, "CSS process: decoded not NULL");
+    if (decoded) {
+        assert_equal_str((char*)decoded, css, "CSS process: round-trip matches");
+        free(decoded);
+    }
+    free(hex);
+    printf("PASS cmdline process: CSS encode/decode round-trip\n");
+}
+
+void test_cmdline_process_js_encode_decode(void) {
+    const char* js = "function add(a,b){return a+b;}";
+    char prog[] = "prog";
+    char text_buf[] = "function add(a,b){return a+b;}";
+    char lf[] = "-l";
+    char fmt[] = "JS";
+    char* enc_argv[] = {prog, text_buf, lf, fmt};
+    CmdlineOpts enc_opts;
+    assert_true(parse_cmdline_opts(4, enc_argv, &enc_opts) == 0,
+                "JS process: encode parse ok");
+
+    unsigned char* encoded = NULL;
+    size_t enc_len = 0;
+    assert_true(process_opts(&enc_opts, &encoded, &enc_len) == 0,
+                "JS process: encode ok");
+    assert_true(encoded != NULL && enc_len > 0, "JS process: encoded not empty");
+    if (!encoded) return;
+
+    char* hex = bytes_to_hex_str(encoded, enc_len);
+    free(encoded);
+    assert_true(hex != NULL, "JS process: hex conversion ok");
+    if (!hex) return;
+
+    char df[] = "-d";
+    char* dec_argv[] = {prog, hex, lf, fmt, df};
+    CmdlineOpts dec_opts;
+    assert_true(parse_cmdline_opts(5, dec_argv, &dec_opts) == 0,
+                "JS process: decode parse ok");
+
+    unsigned char* decoded = NULL;
+    size_t dec_len = 0;
+    assert_true(process_opts(&dec_opts, &decoded, &dec_len) == 0,
+                "JS process: decode ok");
+    assert_true(decoded != NULL, "JS process: decoded not NULL");
+    if (decoded) {
+        assert_equal_str((char*)decoded, js, "JS process: round-trip matches");
+        free(decoded);
+    }
+    free(hex);
+    printf("PASS cmdline process: JS encode/decode round-trip\n");
+}
+
+/* Helper: try local path, then ../../../ fallback (build dir → source dir) */
+static const char* find_test_sample(const char* name, char* fallback, size_t fbsz) {
+    FILE* fp = fopen(name, "rb");
+    if (fp) { fclose(fp); return name; }
+    snprintf(fallback, fbsz, "../../../%s", name);
+    return fallback;
+}
+
+void test_cmdline_process_file_input_en(void) {
+    char fallback[256];
+    const char* path = find_test_sample("test-sample.en.txt", fallback, sizeof(fallback));
+    char prog[] = "prog";
+    char path_buf[256];
+    strncpy(path_buf, path, sizeof(path_buf) - 1);
+    path_buf[sizeof(path_buf) - 1] = '\0';
+    char ff[] = "-f";
+    char lf[] = "-l";
+    char fmt[] = "EN";
+    char* argv[] = {prog, path_buf, ff, lf, fmt};
+    CmdlineOpts opts;
+    assert_equal_int(parse_cmdline_opts(5, argv, &opts), 0, "file EN: parse ok");
+    assert_equal_int(opts.file_flag, 1, "file EN: file_flag set");
+
+    unsigned char* out = NULL;
+    size_t out_len = 0;
+    int r = process_opts(&opts, &out, &out_len);
+    assert_true(r == 0,          "file EN: process ok");
+    assert_true(out != NULL,     "file EN: output not NULL");
+    assert_true(out_len > 0,     "file EN: output not empty");
+    free(out);
+    printf("PASS cmdline process: file input EN\n");
+}
+
+void test_cmdline_process_file_input_css(void) {
+    char fallback[256];
+    const char* path = find_test_sample("test-sample.css", fallback, sizeof(fallback));
+    char prog[] = "prog";
+    char path_buf[256];
+    strncpy(path_buf, path, sizeof(path_buf) - 1);
+    path_buf[sizeof(path_buf) - 1] = '\0';
+    char ff[] = "-f";
+    char lf[] = "-l";
+    char fmt[] = "CSS";
+    char* argv[] = {prog, path_buf, ff, lf, fmt};
+    CmdlineOpts opts;
+    assert_equal_int(parse_cmdline_opts(5, argv, &opts), 0, "file CSS: parse ok");
+
+    unsigned char* out = NULL;
+    size_t out_len = 0;
+    int r = process_opts(&opts, &out, &out_len);
+    assert_true(r == 0,      "file CSS: process ok");
+    assert_true(out != NULL, "file CSS: output not NULL");
+    assert_true(out_len > 0, "file CSS: output not empty");
+    free(out);
+    printf("PASS cmdline process: file input CSS\n");
+}
+
+void test_cmdline_process_file_input_js(void) {
+    char fallback[256];
+    const char* path = find_test_sample("test-sample.js", fallback, sizeof(fallback));
+    char prog[] = "prog";
+    char path_buf[256];
+    strncpy(path_buf, path, sizeof(path_buf) - 1);
+    path_buf[sizeof(path_buf) - 1] = '\0';
+    char ff[] = "-f";
+    char lf[] = "-l";
+    char fmt[] = "JS";
+    char* argv[] = {prog, path_buf, ff, lf, fmt};
+    CmdlineOpts opts;
+    assert_equal_int(parse_cmdline_opts(5, argv, &opts), 0, "file JS: parse ok");
+
+    unsigned char* out = NULL;
+    size_t out_len = 0;
+    int r = process_opts(&opts, &out, &out_len);
+    assert_true(r == 0,      "file JS: process ok");
+    assert_true(out != NULL, "file JS: output not NULL");
+    assert_true(out_len > 0, "file JS: output not empty");
+    free(out);
+    printf("PASS cmdline process: file input JS\n");
+}
+
+void test_cmdline_process_file_input_html(void) {
+    char fallback[256];
+    const char* path = find_test_sample("test-sample.html", fallback, sizeof(fallback));
+    char prog[] = "prog";
+    char path_buf[256];
+    strncpy(path_buf, path, sizeof(path_buf) - 1);
+    path_buf[sizeof(path_buf) - 1] = '\0';
+    char ff[] = "-f";
+    char lf[] = "-l";
+    char fmt[] = "HTML";
+    char* argv[] = {prog, path_buf, ff, lf, fmt};
+    CmdlineOpts opts;
+    assert_equal_int(parse_cmdline_opts(5, argv, &opts), 0, "file HTML: parse ok");
+
+    unsigned char* out = NULL;
+    size_t out_len = 0;
+    int r = process_opts(&opts, &out, &out_len);
+    assert_true(r == 0,      "file HTML: process ok");
+    assert_true(out != NULL, "file HTML: output not NULL");
+    assert_true(out_len > 0, "file HTML: output not empty");
+    free(out);
+    printf("PASS cmdline process: file input HTML\n");
+}

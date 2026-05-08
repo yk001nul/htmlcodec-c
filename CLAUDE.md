@@ -91,8 +91,8 @@ This is a C17 compression library that tokenizes HTML, CSS, English/Dutch text, 
 
 ### CMake Targets
 
-- **`htmlcodec-c-lib`** — static library: `html-tokenizer.c`, `html-codec.c`, `css-tokenizer.c`, `css-codec.c`, `nl-en-tokenizer.c`, `nl-en-opt.c`, `nl-en-codec.c`, `cl-javascript-en-tokenizer.c`, `cl-javascript-codec.c`, `nl-en-us-hyphenator.c`
-- **`htmlcodec-c`** — main executable stub (currently a no-op)
+- **`htmlcodec-c-lib`** — static library: `html-tokenizer.c`, `html-codec.c`, `css-tokenizer.c`, `css-codec.c`, `nl-en-tokenizer.c`, `nl-en-opt.c`, `nl-en-codec.c`, `cl-javascript-en-tokenizer.c`, `cl-javascript-codec.c`, `nl-en-us-hyphenator.c`, `cmdline.c`
+- **`htmlcodec-c`** — main CLI executable; see Command-Line Interface section below
 - **`htmlcodec-c-test`** — test runner (`test-runner.c` + `tokenizer-test.c`)
 
 ### Tokenizer/Codec Modules
@@ -305,6 +305,34 @@ Two benchmark tests compare `html_encode_ae_opt` output size against zlib applie
 | Long  | 3358 B (235 tokens, full webpage) | ~2028 B (39.6% reduction) | ~1070 B | Steps 1–6 combined save ~1330 B vs baseline ~3470 B (+3.3%) |
 
 Steps 1–6 achieve **39.6% reduction** on the long test document (3358 B → 2028 B). The codec beats zlib on the short input (80 B vs 89 B). Step 4 (codebook AE) contributed the largest additional gain over Steps 1–3 (21.6% → 39.6%) by eliminating ~600 B of fixed 9-bit tag/attr flag overhead. The remaining gap to zlib (~1070 B) reflects structured per-token serialisation overhead; the realistic ceiling for this architecture is ~55–60% on this document.
+
+### Command-Line Interface
+
+The `htmlcodec-c` executable provides command-line access to all tokenizer/codec modules.
+
+**Usage:** `htmlcodec-c text [-f] [-d] [-l format] [-a] [outputpath]`
+
+| Argument | Meaning |
+|----------|---------|
+| `text` | Raw text to encode/decode, or a file path when `-f` is used |
+| `-f` | Treat `text` as a file path and read its contents |
+| `-d` | Decode mode (default: encode) |
+| `-l format` | Language/codec: `HTML`, `CSS`, `JS`, `EN` (default: `EN`) |
+| `-a` | Output raw ASCII bytes instead of a hexdump (warning: may cause unexpected terminal output without `outputpath`) |
+| `outputpath` | Write result to this file instead of the console |
+
+**Format routing:**
+
+| Format | Tokenizer | Codec |
+|--------|-----------|-------|
+| `EN` (default) | `tokenizeEnglishOpt()` | `nl_en_encode_opt()` / `nl_en_decode_opt()` |
+| `HTML` | `parseHTML()` + `enrichHTMLTokenSubdata()` | `html_encode_ae_opt()` / `html_decode_ae_opt()` |
+| `CSS` | `parseCSS()` | `css_encode_opt()` / `css_decode_opt()` |
+| `JS` | `tokenizeJavaScript()` | `cljs_encode_ae_opt()` / `cljs_decode_ae_opt()` |
+
+**Decode input format:** Without `-f`, the `text` argument is parsed as a hex string (non-hex characters are ignored), allowing users to pipe or paste hexdump output directly as decode input. With `-f`, the file is read as raw binary encoded data.
+
+**Implementation:** `cmdline.h` / `cmdline.c` expose `parse_cmdline_opts()` and `process_opts()` as testable functions, both included in `htmlcodec-c-lib`. Sample test files (`test-sample.en.txt`, `test-sample.css`, `test-sample.js`, `test-sample.html`) are committed for file-based tests.
 
 ### Test Structure
 

@@ -9,6 +9,7 @@
 #include "html-tokenizer.h"
 #include "css-tokenizer.h"
 #include "cl-javascript-codec.h"
+#include "cmdline.h"
 
 extern int testsPassed;
 extern int testsFailed;
@@ -191,5 +192,30 @@ void test_html_codec_roundtrip_unknown_tag();
 void test_html_codec_worst_case();
 void test_zlib_compare_html_codec_short();
 void test_zlib_compare_html_codec_long();
+
+// Command-line argument parse tests (cmdlinearg.md)
+void test_cmdline_parse_text_only();
+void test_cmdline_parse_file_flag();
+void test_cmdline_parse_decode_flag();
+void test_cmdline_parse_format_html();
+void test_cmdline_parse_format_css();
+void test_cmdline_parse_format_js();
+void test_cmdline_parse_format_en_explicit();
+void test_cmdline_parse_ascii_flag();
+void test_cmdline_parse_outputpath();
+void test_cmdline_parse_combined_all_flags();
+void test_cmdline_parse_no_args();
+void test_cmdline_parse_missing_format_arg();
+void test_cmdline_parse_invalid_format();
+
+// Command-line process tests (encode/decode round-trips)
+void test_cmdline_process_en_encode_decode();
+void test_cmdline_process_html_encode_decode();
+void test_cmdline_process_css_encode_decode();
+void test_cmdline_process_js_encode_decode();
+void test_cmdline_process_file_input_en();
+void test_cmdline_process_file_input_css();
+void test_cmdline_process_file_input_js();
+void test_cmdline_process_file_input_html();
 
 #endif // TOKENIZER_TEST_H
