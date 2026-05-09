@@ -1,4 +1,5 @@
 #include "nl-en-us-hyphenator.h"
+#include "hc-once.h"
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -899,18 +900,20 @@ static KLTrieNode* kl_build_trie_from_file(const char* path) {
 }
 
 static KLTrieNode* g_kl_trie = NULL;
+static hc_once_t   s_trie_once = HC_ONCE_INIT;
 
-static KLTrieNode* kl_get_trie(void) {
-    if (g_kl_trie) return g_kl_trie;
-
+static void kl_init_trie(void) {
     const char* paths[] = { "ushyphmax.tex", "../../../ushyphmax.tex", NULL };
     for (int i = 0; paths[i]; i++) {
         g_kl_trie = kl_build_trie_from_file(paths[i]);
-        if (g_kl_trie) return g_kl_trie;
+        if (g_kl_trie) return;
     }
-
     /* Fallback: build from embedded patterns */
     g_kl_trie = kl_build_trie_from_array(KL_US_HYPHEN_PATTERNS, KL_US_HYPHEN_PATTERN_COUNT);
+}
+
+static KLTrieNode* kl_get_trie(void) {
+    hc_call_once(&s_trie_once, kl_init_trie);
     return g_kl_trie;
 }
 

@@ -3,12 +3,13 @@
 
 #include <stdlib.h>
 #include <stdbool.h>
+#include "htmlcodec-c.h"
 
 #define NL_EN_PATTERN_COUNT 512
 #define NL_EN_MAX_TOKENS 4096
 
-extern const char* NL_EN_RAW_PATTERNS[NL_EN_PATTERN_COUNT];
-extern const char* NL_EN_PATTERNS[NL_EN_PATTERN_COUNT];
+HTMLCODEC_API extern const char* NL_EN_RAW_PATTERNS[NL_EN_PATTERN_COUNT];
+HTMLCODEC_API extern const char* NL_EN_PATTERNS[NL_EN_PATTERN_COUNT];
 
 typedef struct {
     bool isPattern;         // true if matches one of the patterns
@@ -20,9 +21,6 @@ typedef struct {
     NLToken tokens[NL_EN_MAX_TOKENS];
     size_t count;
 } NLTokenArray;
-
-NLTokenArray* tokenizeEnglish(const char* input);
-void freeNLTokenArray(NLTokenArray* arr);
 
 // Frequency entry: one unique NLToken from an NLTokenArray and its occurrence count.
 typedef struct {
@@ -38,12 +36,6 @@ typedef struct {
     size_t      totalTokens;               // arr->count of the source NLTokenArray
 } NLFreqMap;
 
-// Build a frequency map from a completed token array.
-// Returns a heap-allocated NLFreqMap sorted by frequency descending;
-// caller must call freeNLFreqMap().
-NLFreqMap* collectNLFrequencies(const NLTokenArray* arr);
-void freeNLFreqMap(NLFreqMap* map);
-
 /* ── Extended word-level dictionary ─────────────────────────────────────── */
 
 /* Common English words appended to the syllable dictionary.
@@ -51,7 +43,20 @@ void freeNLFreqMap(NLFreqMap* map);
 #define NL_EN_WORD_COUNT       232
 #define NL_EN_OPT_PATTERN_COUNT (NL_EN_PATTERN_COUNT + NL_EN_WORD_COUNT)
 
-extern const char* NL_EN_WORD_PATTERNS[NL_EN_WORD_COUNT];
+HTMLCODEC_API extern const char* NL_EN_WORD_PATTERNS[NL_EN_WORD_COUNT];
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+HTMLCODEC_API NLTokenArray* tokenizeEnglish(const char* input);
+HTMLCODEC_API void freeNLTokenArray(NLTokenArray* arr);
+
+// Build a frequency map from a completed token array.
+// Returns a heap-allocated NLFreqMap sorted by frequency descending;
+// caller must call freeNLFreqMap().
+HTMLCODEC_API NLFreqMap* collectNLFrequencies(const NLTokenArray* arr);
+HTMLCODEC_API void freeNLFreqMap(NLFreqMap* map);
 
 /**
  * Extended tokenizer using true longest-match over both the 512-entry syllable
@@ -61,7 +66,7 @@ extern const char* NL_EN_WORD_PATTERNS[NL_EN_WORD_COUNT];
  * Syllable tokens: flag in [0, NL_EN_PATTERN_COUNT)
  * Word tokens:     flag in [NL_EN_PATTERN_COUNT, NL_EN_OPT_PATTERN_COUNT)
  */
-NLTokenArray* tokenizeEnglishOpt(const char* input);
+HTMLCODEC_API NLTokenArray* tokenizeEnglishOpt(const char* input);
 
 /**
  * Reconstruct the original string from an NLTokenArray.
@@ -69,6 +74,10 @@ NLTokenArray* tokenizeEnglishOpt(const char* input);
  * *cumLen receives the number of bytes written (excluding null terminator).
  * Requires patterns to be initialized (call tokenizeEnglish/tokenizeEnglishOpt first).
  */
-char* detokenizeNLTokenArray(const NLTokenArray* arr, int* cumLen);
+HTMLCODEC_API char* detokenizeNLTokenArray(const NLTokenArray* arr, int* cumLen);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // NL_EN_TOKENIZER_H

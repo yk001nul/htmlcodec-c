@@ -60,13 +60,17 @@ typedef struct {
     int count;
 } HTMLTokenArray;
 
-void parseHTMLAttributes(const char* attrString, HTMLAttribute* attrs, int* attrCount);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-HTMLTokenArray* parseHTML(const char* html);
+HTMLCODEC_API void parseHTMLAttributes(const char* attrString, HTMLAttribute* attrs, int* attrCount);
 
-void enrichHTMLTokenSubdata(HTMLTokenArray* tokens);
+HTMLCODEC_API HTMLTokenArray* parseHTML(const char* html);
 
-void freeHTMLTokenArray(HTMLTokenArray* arr);
+HTMLCODEC_API void enrichHTMLTokenSubdata(HTMLTokenArray* tokens);
+
+HTMLCODEC_API void freeHTMLTokenArray(HTMLTokenArray* arr);
 
 /**
  * Reconstruct the original HTML string from an HTMLTokenArray.
@@ -76,6 +80,10 @@ void freeHTMLTokenArray(HTMLTokenArray* arr);
  * *cumLen receives the number of bytes written (excluding null terminator).
  * Requires NL patterns to be initialized (satisfied by any prior parseHTML call).
  */
-char* detokenizeHTMLTokenArray(const HTMLTokenArray* arr, int* cumLen);
+HTMLCODEC_API char* detokenizeHTMLTokenArray(const HTMLTokenArray* arr, int* cumLen);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // HTML_TOKENIZER_H

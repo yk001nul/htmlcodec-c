@@ -3,14 +3,15 @@
 
 #include <stdlib.h>
 #include <stdbool.h>
+#include "htmlcodec-c.h"
 
 #define CL_JS_EN_PATTERN_COUNT 502
 #define CL_JS_EN_MAX_TOKENS 8192
 
-extern const char* CL_JS_EN_RAW_PATTERNS[CL_JS_EN_PATTERN_COUNT];
-extern const char* CL_JS_EN_PATTERNS[CL_JS_EN_PATTERN_COUNT];
+HTMLCODEC_API extern const char* CL_JS_EN_RAW_PATTERNS[CL_JS_EN_PATTERN_COUNT];
+HTMLCODEC_API extern const char* CL_JS_EN_PATTERNS[CL_JS_EN_PATTERN_COUNT];
 /* True at sorted position i if that pattern is an English digraph (raw index 160–223) */
-extern bool CL_JS_EN_PATTERN_IS_DIGRAPH[CL_JS_EN_PATTERN_COUNT];
+HTMLCODEC_API extern bool CL_JS_EN_PATTERN_IS_DIGRAPH[CL_JS_EN_PATTERN_COUNT];
 
 typedef struct {
     bool isPattern;           /* true if matches one of the patterns */
@@ -23,8 +24,12 @@ typedef struct {
     size_t count;
 } CLJSTokenArray;
 
-CLJSTokenArray* tokenizeJavaScript(const char* input);
-void freeCLJSTokenArray(CLJSTokenArray* arr);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+HTMLCODEC_API CLJSTokenArray* tokenizeJavaScript(const char* input);
+HTMLCODEC_API void freeCLJSTokenArray(CLJSTokenArray* arr);
 
 /**
  * Reconstruct the original string from a CLJSTokenArray.
@@ -32,6 +37,10 @@ void freeCLJSTokenArray(CLJSTokenArray* arr);
  * *cumLen receives the number of bytes written (excluding null terminator).
  * Requires patterns to be initialized (call tokenizeJavaScript first).
  */
-char* detokenizeCLJSTokenArray(const CLJSTokenArray* arr, int* cumLen);
+HTMLCODEC_API char* detokenizeCLJSTokenArray(const CLJSTokenArray* arr, int* cumLen);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // CL_JAVASCRIPT_EN_TOKENIZER_H

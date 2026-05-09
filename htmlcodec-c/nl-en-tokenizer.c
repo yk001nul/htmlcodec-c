@@ -1,5 +1,6 @@
 /* nl-en-tokenizer v2 */
 #include "nl-en-tokenizer.h"
+#include "hc-once.h"
 #include <stdint.h>
 #include <string.h>
 #include <ctype.h>
@@ -78,7 +79,7 @@ const char* NL_EN_RAW_PATTERNS[NL_EN_PATTERN_COUNT] = {
 
 const char* NL_EN_PATTERNS[NL_EN_PATTERN_COUNT];
 
-static bool patternsInitialized = false;
+static hc_once_t s_patterns_once = HC_ONCE_INIT;
 static size_t minPatternLen = 0;
 
 static bool equal_case_insensitive(const char* a, const char* b, size_t len) {
@@ -115,7 +116,6 @@ static int detect_case_style(const char* s, size_t len) {
 }
 
 static void initialize_patterns(void) {
-    if (patternsInitialized) return;
 
     // Section boundaries in NL_EN_RAW_PATTERNS (ordered by frequency, high to low).
     // Patterns within the same section share similar frequency; their position within
@@ -170,12 +170,11 @@ static void initialize_patterns(void) {
     if (minPatternLen == SIZE_MAX || minPatternLen == 0) {
         minPatternLen = 1;
     }
-    patternsInitialized = true;
 }
 
 NLTokenArray* tokenizeEnglish(const char* input) {
     if (!input) return NULL;
-    initialize_patterns();
+    hc_call_once(&s_patterns_once, initialize_patterns);
 
     size_t inputLen = strlen(input);
     NLTokenArray* result = (NLTokenArray*)malloc(sizeof(NLTokenArray));

@@ -53,6 +53,11 @@ add_library(htmlcodec-c-lib STATIC
 
 target_include_directories(htmlcodec-c-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Consumers of the static library must not use __declspec(dllimport);
+# propagate HTMLCODEC_STATIC through the PUBLIC interface so every target
+# that links htmlcodec-c-lib gets the right macro automatically.
+target_compile_definitions(htmlcodec-c-lib PUBLIC HTMLCODEC_STATIC)
+
 # Platform-specific compiler diagnostics
 if(MSVC)
     target_compile_options(htmlcodec-c-lib PRIVATE /W3)
@@ -81,14 +86,17 @@ target_include_directories(htmlcodec-c-shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 # Platform-specific compiler diagnostics for shared library
 if(MSVC)
     target_compile_options(htmlcodec-c-shared PRIVATE /W3)
-    set_target_properties(htmlcodec-c-shared PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 elseif(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
     target_compile_options(htmlcodec-c-shared PRIVATE
         -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare)
-    set_target_properties(htmlcodec-c-shared PROPERTIES 
+    set_target_properties(htmlcodec-c-shared PROPERTIES
         C_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON)
 endif()
+
+# Tell the shared library it is the DLL being built, so HTMLCODEC_API expands
+# to dllexport (Windows) or visibility("default") (GCC/Clang).
+target_compile_definitions(htmlcodec-c-shared PRIVATE HTMLCODEC_BUILDING_DLL)
 
 # Install targets for shared library
 install(TARGETS htmlcodec-c-shared

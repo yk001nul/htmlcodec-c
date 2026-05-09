@@ -1,4 +1,5 @@
 #include "html-codec.h"
+#include "hc-once.h"
 #include "nl-en-codec.h"
 #include "css-codec.h"
 #include "cl-javascript-codec.h"
@@ -230,22 +231,19 @@ const int HTML_CODEBOOK_MIME_COUNT = MIME_COUNT;
 const int HTML_CODEBOOK_SIZE       = CODEBOOK_SIZE;
 
 static const char* s_flat[CODEBOOK_SIZE];
-static int s_init = 0;
-
-static void codebook_init(void) {
-    if (s_init) return;
-    for (int i = 0; i < TAG_COUNT; i++)  s_flat[i]            = s_tags[i];
-    for (int i = 0; i < ATTR_COUNT; i++) s_flat[ATTR_START+i]  = s_attrs[i];
-    for (int i = 0; i < MIME_COUNT; i++) s_flat[MIME_START+i]  = s_mimes[i];
-    s_init = 1;
-}
+static hc_once_t s_codebook_once = HC_ONCE_INIT;
 
 const char* HTML_CODEBOOK[CODEBOOK_SIZE];
 
+static void codebook_init(void) {
+    for (int i = 0; i < TAG_COUNT; i++)  s_flat[i]           = s_tags[i];
+    for (int i = 0; i < ATTR_COUNT; i++) s_flat[ATTR_START+i] = s_attrs[i];
+    for (int i = 0; i < MIME_COUNT; i++) s_flat[MIME_START+i] = s_mimes[i];
+    for (int i = 0; i < CODEBOOK_SIZE; i++) HTML_CODEBOOK[i]  = s_flat[i];
+}
+
 void html_codebook_init(void) {
-    if (s_init) return;
-    codebook_init();
-    for (int i = 0; i < CODEBOOK_SIZE; i++) HTML_CODEBOOK[i] = s_flat[i];
+    hc_call_once(&s_codebook_once, codebook_init);
 }
 
 static int find_tag(const char* name) {

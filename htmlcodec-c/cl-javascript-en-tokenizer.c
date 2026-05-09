@@ -1,4 +1,5 @@
 #include "cl-javascript-en-tokenizer.h"
+#include "hc-once.h"
 #include <string.h>
 #include <ctype.h>
 
@@ -94,7 +95,7 @@ const char* CL_JS_EN_RAW_PATTERNS[CL_JS_EN_PATTERN_COUNT] = {
 
 const char* CL_JS_EN_PATTERNS[CL_JS_EN_PATTERN_COUNT];
 
-static bool patternsInitialized = false;
+static hc_once_t s_patterns_once = HC_ONCE_INIT;
 static size_t minPatternLen = 0;
 bool CL_JS_EN_PATTERN_IS_DIGRAPH[CL_JS_EN_PATTERN_COUNT] = { false };
 
@@ -139,7 +140,6 @@ static int detect_case_style(const char* s, size_t len) {
 }
 
 static void initialize_patterns(void) {
-    if (patternsInitialized) return;
 
     int indices[CL_JS_EN_PATTERN_COUNT];
     for (int i = 0; i < CL_JS_EN_PATTERN_COUNT; i++) {
@@ -158,12 +158,11 @@ static void initialize_patterns(void) {
         if (l < minPatternLen) minPatternLen = l;
     }
     if (minPatternLen == (size_t)-1 || minPatternLen == 0) minPatternLen = 1;
-    patternsInitialized = true;
 }
 
 CLJSTokenArray* tokenizeJavaScript(const char* input) {
     if (!input) return NULL;
-    initialize_patterns();
+    hc_call_once(&s_patterns_once, initialize_patterns);
 
     size_t inputLen = strlen(input);
     CLJSTokenArray* result = (CLJSTokenArray*)malloc(sizeof(CLJSTokenArray));
