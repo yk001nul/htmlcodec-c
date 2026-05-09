@@ -5,6 +5,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include "htmlcodec-c.h"
 
 #define CSS_MAX_TOKENS          256
 #define CSS_MAX_SELECTOR_LEN    256
@@ -16,21 +17,21 @@
 
 /* Codebook: flat array of all known CSS patterns across 11 segments.
    Segment boundary start indices are exposed below.                   */
-extern const char* CSS_PATTERNS[];
-extern const int   CSS_PATTERN_COUNT;
+HTMLCODEC_API extern const char* CSS_PATTERNS[];
+HTMLCODEC_API extern const int   CSS_PATTERN_COUNT;
 
 /* Segment start indices within CSS_PATTERNS */
-extern const int CSS_SEG1_START;   /* HTML type selectors (tag names)        */
-extern const int CSS_SEG2_START;   /* HTML attribute names                   */
-extern const int CSS_SEG3_START;   /* Pseudo-class selectors                 */
-extern const int CSS_SEG4_START;   /* Pseudo-element selectors               */
-extern const int CSS_SEG5_START;   /* CSS properties                         */
-extern const int CSS_SEG6_START;   /* CSS at-rules                           */
-extern const int CSS_SEG7_START;   /* Combinators and conditional symbols     */
-extern const int CSS_SEG8_START;   /* Reserved keyword values                */
-extern const int CSS_SEG9_START;   /* Value functions (up to first '(')      */
-extern const int CSS_SEG10_START;  /* Named colors                           */
-extern const int CSS_SEG11_START;  /* Named blocks used in CSS at-rules      */
+HTMLCODEC_API extern const int CSS_SEG1_START;   /* HTML type selectors (tag names)        */
+HTMLCODEC_API extern const int CSS_SEG2_START;   /* HTML attribute names                   */
+HTMLCODEC_API extern const int CSS_SEG3_START;   /* Pseudo-class selectors                 */
+HTMLCODEC_API extern const int CSS_SEG4_START;   /* Pseudo-element selectors               */
+HTMLCODEC_API extern const int CSS_SEG5_START;   /* CSS properties                         */
+HTMLCODEC_API extern const int CSS_SEG6_START;   /* CSS at-rules                           */
+HTMLCODEC_API extern const int CSS_SEG7_START;   /* Combinators and conditional symbols     */
+HTMLCODEC_API extern const int CSS_SEG8_START;   /* Reserved keyword values                */
+HTMLCODEC_API extern const int CSS_SEG9_START;   /* Value functions (up to first '(')      */
+HTMLCODEC_API extern const int CSS_SEG10_START;  /* Named colors                           */
+HTMLCODEC_API extern const int CSS_SEG11_START;  /* Named blocks used in CSS at-rules      */
 
 /* Requirement 2 ---------------------------------------------------------- */
 
@@ -89,13 +90,17 @@ typedef struct {
     int count;
 } CSSTokenArray;
 
-CSSTokenArray* parseCSS(const char* css);
-void freeCSS(CSSTokenArray* arr);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+HTMLCODEC_API CSSTokenArray* parseCSS(const char* css);
+HTMLCODEC_API void freeCSS(CSSTokenArray* arr);
 
 /* Req 2 (csscodec): flatten selectorTokens + property name/value tokens of a
    type-0 CSSToken into token->data.rule.ruleTokens, inserting ASCII boundary
    sentinels ('{', ':', ';', '}') between sections.                          */
-void css_flatten_rule_tokens(CSSToken* token);
+HTMLCODEC_API void css_flatten_rule_tokens(CSSToken* token);
 
 /* Req 3 (csscodec): frequency map ---------------------------------------- */
 
@@ -114,8 +119,8 @@ typedef struct {
    For type-0 tokens uses ruleTokens; type-1 uses atRuleTokens;
    type-2 uses commentTokens.  Returns heap-allocated map sorted
    descending by frequency; caller must call freeCSSFreqMap().   */
-CSSFreqMap* collectCSSFrequencies(const CSSTokenArray* arr);
-void        freeCSSFreqMap(CSSFreqMap* map);
+HTMLCODEC_API CSSFreqMap* collectCSSFrequencies(const CSSTokenArray* arr);
+HTMLCODEC_API void        freeCSSFreqMap(CSSFreqMap* map);
 
 /**
  * Reconstruct the original CSS string from a CSSTokenArray.
@@ -123,6 +128,10 @@ void        freeCSSFreqMap(CSSFreqMap* map);
  * Caller must free() the returned buffer.
  * *cumLen receives the number of bytes written (excluding null terminator).
  */
-char* detokenizeCSSTokenArray(const CSSTokenArray* arr, int* cumLen);
+HTMLCODEC_API char* detokenizeCSSTokenArray(const CSSTokenArray* arr, int* cumLen);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* CSS_TOKENIZER_H */

@@ -6,18 +6,22 @@
 #include <stdint.h>
 
 /* Codebook segment boundaries */
-extern const int HTML_CODEBOOK_TAG_COUNT;
-extern const int HTML_CODEBOOK_ATTR_START;
-extern const int HTML_CODEBOOK_ATTR_COUNT;
-extern const int HTML_CODEBOOK_MIME_START;
-extern const int HTML_CODEBOOK_MIME_COUNT;
-extern const int HTML_CODEBOOK_SIZE;
+HTMLCODEC_API extern const int HTML_CODEBOOK_TAG_COUNT;
+HTMLCODEC_API extern const int HTML_CODEBOOK_ATTR_START;
+HTMLCODEC_API extern const int HTML_CODEBOOK_ATTR_COUNT;
+HTMLCODEC_API extern const int HTML_CODEBOOK_MIME_START;
+HTMLCODEC_API extern const int HTML_CODEBOOK_MIME_COUNT;
+HTMLCODEC_API extern const int HTML_CODEBOOK_SIZE;
 
 /* Flat codebook array (filled after html_codebook_init()) */
-extern const char* HTML_CODEBOOK[];
+HTMLCODEC_API extern const char* HTML_CODEBOOK[];
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Initialize the codebook (idempotent; called automatically by encode/decode) */
-void html_codebook_init(void);
+HTMLCODEC_API void html_codebook_init(void);
 
 /**
  * Encodes an HTMLTokenArray into a compact binary stream.
@@ -57,8 +61,8 @@ void html_codebook_init(void);
  * @param outSize Output: byte size of returned buffer
  * @return Heap-allocated buffer; caller must free it
  */
-unsigned char* html_encode_ae_opt(const HTMLTokenArray* arr, size_t count,
-                                  size_t* outSize);
+HTMLCODEC_API unsigned char* html_encode_ae_opt(const HTMLTokenArray* arr, size_t count,
+                                                size_t* outSize);
 
 /**
  * Decodes a buffer produced by html_encode_ae_opt back into an HTMLTokenArray.
@@ -67,6 +71,10 @@ unsigned char* html_encode_ae_opt(const HTMLTokenArray* arr, size_t count,
  * @param bufferSize Size in bytes
  * @return Heap-allocated HTMLTokenArray; caller must free with freeHTMLTokenArray
  */
-HTMLTokenArray* html_decode_ae_opt(const unsigned char* buffer, size_t bufferSize);
+HTMLCODEC_API HTMLTokenArray* html_decode_ae_opt(const unsigned char* buffer, size_t bufferSize);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* HTML_CODEC_H */

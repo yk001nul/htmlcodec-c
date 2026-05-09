@@ -16,6 +16,16 @@ typedef struct {
     uint32_t       cum_high;
 } CSSAESymbol;
 
+/* Vocabulary entry for the optimised codec (identity only, no frequency) */
+typedef struct {
+    bool           isPattern;
+    unsigned short flag;
+} CSSOptVocabEntry;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * Encodes a CSSTokenArray using arithmetic encoding.
  *
@@ -33,7 +43,7 @@ typedef struct {
  * @param outSize Output: size of returned buffer in bytes
  * @return Heap-allocated byte buffer; caller must free it
  */
-unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t count, size_t* outSize);
+HTMLCODEC_API unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t count, size_t* outSize);
 
 /**
  * Decodes a byte buffer produced by css_encode_ae back into a CSSTokenArray.
@@ -42,7 +52,7 @@ unsigned char* css_encode_ae(const CSSTokenArray* arr, size_t count, size_t* out
  * @param bufferSize Size of buffer in bytes
  * @return Heap-allocated CSSTokenArray; caller must free with freeCSS
  */
-CSSTokenArray* css_decode_ae(const unsigned char* buffer, size_t bufferSize);
+HTMLCODEC_API CSSTokenArray* css_decode_ae(const unsigned char* buffer, size_t bufferSize);
 
 /* ── Optimised CSS codec (Steps 1-3) ─────────────────────────────────────
  *  Step 1 – Adaptive AE: vocab-only header (no per-symbol frequencies)
@@ -51,12 +61,6 @@ CSSTokenArray* css_decode_ae(const unsigned char* buffer, size_t bufferSize);
  *            CSS segment membership rules so the model predicts well even
  *            before sufficient adaptation tokens have been observed.
  * ──────────────────────────────────────────────────────────────────────── */
-
-/* Vocabulary entry for the optimised codec (identity only, no frequency) */
-typedef struct {
-    bool           isPattern;
-    unsigned short flag;
-} CSSOptVocabEntry;
 
 /**
  * Encodes a CSSTokenArray using the optimised adaptive order-1 codec.
@@ -75,7 +79,7 @@ typedef struct {
  * @param outSize Output: size of returned buffer in bytes
  * @return Heap-allocated byte buffer; caller must free it
  */
-unsigned char* css_encode_opt(const CSSTokenArray* arr, size_t count, size_t* outSize);
+HTMLCODEC_API unsigned char* css_encode_opt(const CSSTokenArray* arr, size_t count, size_t* outSize);
 
 /**
  * Decodes a byte buffer produced by css_encode_opt back into a CSSTokenArray.
@@ -84,6 +88,10 @@ unsigned char* css_encode_opt(const CSSTokenArray* arr, size_t count, size_t* ou
  * @param bufferSize Size of buffer in bytes
  * @return Heap-allocated CSSTokenArray; caller must free it
  */
-CSSTokenArray* css_decode_opt(const unsigned char* buffer, size_t bufferSize);
+HTMLCODEC_API CSSTokenArray* css_decode_opt(const unsigned char* buffer, size_t bufferSize);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* CSS_CODEC_H */
