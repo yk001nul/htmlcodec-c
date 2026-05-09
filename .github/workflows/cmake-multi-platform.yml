@@ -133,7 +133,12 @@ jobs:
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        files: release-files/**/*
+        files: |
+          release-files/**/*.exe
+          release-files/**/*.dll
+          release-files/**/*.so
+          release-files/**/*.lib
+          release-files/**/htmlcodec-c
         draft: false
         generate_release_notes: true
         prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
