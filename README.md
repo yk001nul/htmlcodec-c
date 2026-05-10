@@ -449,19 +449,18 @@ The CSS codec tokenizes stylesheets against a 1208-entry codebook (covering HTML
 
 ```mermaid
 flowchart TD
-    A([CSS input]) --> B{Next non-whitespace\ncharacter?}
-    B -->|'@'| C[Greedy longest-match\nat-rule name from codebook\nseg 6: indices 679–697]
-    B -->|'/*'| D[Read comment text\nuntil '*/']
-    B -->|selector character| E[Greedy longest-match\nselector from codebook\nsegs 1–4: indices 0–346]
-    C --> F[Read at-rule block\nor statement]
-    E --> G[Read '{'\nthen parse properties]
-    G --> H[For each property:\ngreedy-match name from seg 5\n347–678]
-    H --> I[Read ':' then greedy-match\nvalue tokens from segs 8–11\n708–1207]
-    I --> J{More properties\nbefore '}'?}
-    J -->|yes| H
-    J -->|no| K[Flatten: selectorTokens\n+ sentinel chars\n+ all property tokens]
-    C --> L[Emit CSSToken type=atRule]
+    A([CSS input]) --> B{"Next non-whitespace\ncharacter?"}
+    B -->|"'@'"| C["Greedy longest-match\nat-rule name from codebook\nseg 6: indices 679–697"]
+    B -->|"'/*'"| D["Read comment text\nuntil end of comment"]
+    B -->|selector character| E["Greedy longest-match\nselector from codebook\nsegs 1–4: indices 0–346"]
+    C --> F["Read at-rule block or statement"]
+    F --> L[Emit CSSToken type=atRule]
     D --> M[Emit CSSToken type=comment]
+    E --> G["Read '{' then parse properties"]
+    G --> H["For each property: greedy-match\nname from seg 5, read ':', then\ngreedy-match value segs 8–11"]
+    H --> J{"More properties\nbefore closing brace?"}
+    J -->|yes| H
+    J -->|no| K["Flatten: selectorTokens\n+ sentinel chars\n+ all property tokens"]
     K --> N[Emit CSSToken type=rule]
     L --> O{More input?}
     M --> O
@@ -479,7 +478,7 @@ flowchart TD
     A([CSSTokenArray]) --> B[Concatenate all CSSTokenizable\nsequences into one flat stream]
     B --> C[Build ordered vocab list\nfirst-appearance order]
     C --> D[Write header:\ntotal tokenizable count\n+ vocab entries\n+ per-token size metadata]
-    D --> E[Pre-warm context model\nwith CSS structural bigrams:\nafter '{' → property names +20\nafter ':' → value tokens +20\netc.]
+    D --> E["Pre-warm context model\nwith CSS structural bigrams:\nafter '{' → property names +20\nafter ':' → value tokens +20\netc."]
     E --> F[Initialize order-1 context model\nLaplace-seeded count table]
     F --> G[Arithmetic-encode tokenizable\nusing context distribution]
     G --> H[Update count table\nfor context→tokenizable]
@@ -505,7 +504,7 @@ flowchart TD
     A([JS source]) --> B[Initialize 502-entry pattern dict\nsorted longest-first\nfor greedy matching]
     B --> C[Scan input left-to-right\nfrom current position]
     C --> D{Greedy longest-match\nin pattern dict?}
-    D -->|keyword, API, digraph,\noperator, or fragment| E[Emit pattern token\nflag = sorted dict index 0–501]
+    D -->|pattern match| E[Emit pattern token\nflag = sorted dict index 0–501]
     D -->|no match| F[Emit raw ASCII token\nflag = full byte value 0–255\npreserves non-printable chars]
     E --> G{Token is English\ndigraph? indices 160–223}
     G -->|yes| H[Detect case style\n0=lower 1=upper\n2=first-upper 3=last-upper]
@@ -528,7 +527,7 @@ flowchart TD
     B -->|no — small vocab| D[Write per-entry header:\nvocab_size + each token identity\n~9.7 bits per entry]
     C --> E[Write caseStyle side-channel\n2 bits per digraph token\nbefore AE stream]
     D --> E
-    E --> F[Pre-warm context model\nJS structural bigrams:\n'{' → newline, ';' → newline\nkeyword → space, 'this' → '.' etc.]
+    E --> F["Pre-warm context model\nJS structural bigrams:\n'{' → newline, ';' → newline\nkeyword → space, 'this' → '.'"]
     F --> G[Initialize order-1 context model\nLaplace-seeded count table]
     G --> H[Arithmetic-encode token\nusing context distribution]
     H --> I[Update count table\nfor context→token]
@@ -552,13 +551,13 @@ The HTML codec is a multi-layer compressor that handles HTML structure, inline C
 ```mermaid
 flowchart TD
     A([HTML input]) --> B{Next character?}
-    B -->|not '<'| C[Accumulate text characters\nuntil '<' or end of input]
-    B -->|'<!--'| D[Consume COMMENT\nuntil matching '-->']
-    B -->|'<'| E[Read tag content\nuntil closing '>']
+    B -->|"not '<'"| C[Accumulate text characters\nuntil angle-bracket or end]
+    B -->|"'<!--'"| D["Consume COMMENT\nuntil matching '-->'"]
+    B -->|"'<'"| E["Read tag content\nuntil closing '>'"]
     C --> F[Emit text token type=0\nwith accumulated content]
     D --> G[Skip comment\nno token emitted]
-    E -->|no '>' found| H[Treat as plain text\nmalformed tag → text token]
-    E -->|'</' prefix| I[Parse closing tag name]
+    E -->|"no '>' found"| H[Treat as plain text\nmalformed tag → text token]
+    E -->|"'</' prefix"| I[Parse closing tag name]
     E -->|open tag| J[Parse tag name\n+ selfClosing flag]
     I --> K[Emit close-tag token type=2]
     J --> L[Parse attribute list:\nname='value' pairs\nwith quote handling]
