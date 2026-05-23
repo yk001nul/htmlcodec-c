@@ -4465,3 +4465,64 @@ void test_cmdline_process_file_input_html(void) {
     free(out);
     printf("PASS cmdline process: file input HTML\n");
 }
+
+/* ── JSON TOKENIZER TESTS ──────────────────────────────────────────────── */
+
+void test_json_tokenizer_best_case(void) {
+    /* JSON with SPECIAL, INTEGER, and FIXED (true/false/null) token types.
+       The two-char SPECIAL pair '{"' at the start and ']}' at the end are
+       also exercised. */
+    const char* input = "{\"key\": [1, 2, true, false, null]}";
+    JSONTokenArray* arr = tokenizeJSON(input);
+    assert_true(arr != NULL, "JSON tok best: result not NULL");
+    assert_true(arr->count > 0, "JSON tok best: has tokens");
+
+    bool hasSpecial = false, hasInteger = false, hasFixed = false;
+    for (int i = 0; i < arr->count; i++) {
+        if (arr->tokens[i].type == JSON_SPECIAL) hasSpecial = true;
+        if (arr->tokens[i].type == JSON_INTEGER) hasInteger = true;
+        if (arr->tokens[i].type == JSON_FIXED)   hasFixed   = true;
+    }
+    assert_true(hasSpecial, "JSON tok best: has SPECIAL tokens");
+    assert_true(hasInteger, "JSON tok best: has INTEGER tokens");
+    assert_true(hasFixed,   "JSON tok best: has FIXED tokens");
+
+    int outSize = 0;
+    char* reconstructed = detokenizeJSON(arr, &outSize);
+    assert_true(reconstructed != NULL, "JSON detok best: result not NULL");
+    assert_equal_int(outSize, (int)strlen(input), "JSON detok best: size matches");
+    assert_equal_str(reconstructed, input, "JSON detok best: round-trip matches");
+
+    free(reconstructed);
+    free(arr);
+    printf("PASS JSON tokenizer best case\n");
+}
+
+void test_json_tokenizer_worst_case(void) {
+    /* JSON exercising HEX (\\uABCD), ESCAPE (\\n), INTEGER (50, 25),
+       and fractional dot as ASCII — maximising token-type variety. */
+    const char* input = "{\"k\": 50.25, \"e\": \"\\uABCD\\n\"}";
+    JSONTokenArray* arr = tokenizeJSON(input);
+    assert_true(arr != NULL, "JSON tok worst: result not NULL");
+    assert_true(arr->count > 0, "JSON tok worst: has tokens");
+
+    bool hasHex = false, hasEscape = false, hasInteger = false;
+    for (int i = 0; i < arr->count; i++) {
+        if (arr->tokens[i].type == JSON_HEX)     hasHex     = true;
+        if (arr->tokens[i].type == JSON_ESCAPE)   hasEscape  = true;
+        if (arr->tokens[i].type == JSON_INTEGER)  hasInteger = true;
+    }
+    assert_true(hasHex,     "JSON tok worst: has HEX tokens");
+    assert_true(hasEscape,  "JSON tok worst: has ESCAPE tokens");
+    assert_true(hasInteger, "JSON tok worst: has INTEGER tokens");
+
+    int outSize = 0;
+    char* reconstructed = detokenizeJSON(arr, &outSize);
+    assert_true(reconstructed != NULL, "JSON detok worst: result not NULL");
+    assert_equal_int(outSize, (int)strlen(input), "JSON detok worst: size matches");
+    assert_equal_str(reconstructed, input, "JSON detok worst: round-trip matches");
+
+    free(reconstructed);
+    free(arr);
+    printf("PASS JSON tokenizer worst case\n");
+}

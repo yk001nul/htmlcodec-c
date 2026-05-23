@@ -48,6 +48,7 @@ add_library(htmlcodec-c-lib STATIC
     cl-javascript-en-tokenizer.c
     cl-javascript-codec.c
     nl-en-us-hyphenator.c
+    json-tokenizer.c
     cmdline.c
 )
 
@@ -78,6 +79,7 @@ add_library(htmlcodec-c-shared SHARED
     cl-javascript-en-tokenizer.c
     cl-javascript-codec.c
     nl-en-us-hyphenator.c
+    json-tokenizer.c
     cmdline.c
 )
 
@@ -104,7 +106,7 @@ install(TARGETS htmlcodec-c-shared
     RUNTIME DESTINATION bin
     ARCHIVE DESTINATION lib)
 
-install(FILES 
+install(FILES
     htmlcodec-c.h
     cmdline.h
     html-codec.h
@@ -116,6 +118,7 @@ install(FILES
     cl-javascript-codec.h
     cl-javascript-en-tokenizer.h
     nl-en-us-hyphenator.h
+    json-tokenizer.h
     DESTINATION include)
 
 # Main runtime executable (non-test)

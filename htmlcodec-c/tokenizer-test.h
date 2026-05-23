@@ -9,6 +9,7 @@
 #include "html-tokenizer.h"
 #include "css-tokenizer.h"
 #include "cl-javascript-codec.h"
+#include "json-tokenizer.h"
 #include "cmdline.h"
 
 extern int testsPassed;
@@ -217,5 +218,9 @@ void test_cmdline_process_file_input_en();
 void test_cmdline_process_file_input_css();
 void test_cmdline_process_file_input_js();
 void test_cmdline_process_file_input_html();
+
+// JSON tokenizer tests (jsontokenizer.md)
+void test_json_tokenizer_best_case();
+void test_json_tokenizer_worst_case();
 
 #endif // TOKENIZER_TEST_H

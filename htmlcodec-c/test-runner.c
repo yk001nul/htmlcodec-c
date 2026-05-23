@@ -183,6 +183,10 @@ int main(void) {
     test_cmdline_process_file_input_js();
     test_cmdline_process_file_input_html();
 
+    printf("\n--- JSON TOKENIZER TESTS ---\n");
+    test_json_tokenizer_best_case();
+    test_json_tokenizer_worst_case();
+
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", testsPassed, testsFailed);
 
